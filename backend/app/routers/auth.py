@@ -1,0 +1,156 @@
+from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy.orm import Session
+from ..database import get_db
+from ..models import UserModel
+from ..schemas import LoginRequest, TokenResponse, UserCreate, PasswordUpdate
+from ..security import (
+    verify_password,
+    get_password_hash,
+    create_access_token,
+    get_current_user,
+    require_admin
+)
+
+router = APIRouter(prefix="/auth", tags=["auth"])
+
+@router.post("/login", response_model=TokenResponse)
+def login(req: LoginRequest, db: Session = Depends(get_db)):
+    clean_email = req.email.strip().lower()
+    user = db.query(UserModel).filter(UserModel.email == clean_email).first()
+    if not user or not verify_password(req.password, user.password_hash):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Email atau password salah."
+        )
+
+    token = create_access_token({
+        "sub": user.id,
+        "email": user.email,
+        "role": user.role,
+        "name": user.name
+    })
+
+    return {
+        "access_token": token,
+        "token_type": "bearer",
+        "user": {
+            "id": user.id,
+            "email": user.email,
+            "name": user.name,
+            "role": user.role,
+            "employeeId": user.employee_id
+        }
+    }
+
+@router.get("/users")
+def get_users(db: Session = Depends(get_db), current_user: UserModel = Depends(get_current_user)):
+    users = db.query(UserModel).all()
+    return [
+        {
+            "id": u.id,
+            "email": u.email,
+            "name": u.name,
+            "role": u.role,
+            "employeeId": u.employee_id,
+            "createdAt": u.created_at.isoformat() if u.created_at else None
+        }
+        for u in users
+    ]
+
+@router.post("/register")
+def register(req: UserCreate, db: Session = Depends(get_db)):
+    clean_email = req.email.strip().lower()
+    existing = db.query(UserModel).filter(UserModel.email == clean_email).first()
+    if existing:
+        raise HTTPException(status_code=400, detail="Email sudah terdaftar.")
+
+    # Unauthenticated self-registration is strictly restricted to Employee role (Privilege Escalation Prevention)
+    user = UserModel(
+        email=clean_email,
+        name=req.name.strip(),
+        password_hash=get_password_hash(req.password),
+        role="Employee",
+        employee_id=req.employee_id
+    )
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+
+    token = create_access_token({
+        "sub": user.id,
+        "email": user.email,
+        "role": user.role,
+        "name": user.name
+    })
+
+    return {
+        "access_token": token,
+        "token_type": "bearer",
+        "user": {
+            "id": user.id,
+            "email": user.email,
+            "name": user.name,
+            "role": user.role,
+            "employeeId": user.employee_id
+        }
+    }
+
+@router.post("/users")
+def create_user_by_admin(
+    req: UserCreate,
+    db: Session = Depends(get_db),
+    admin: UserModel = Depends(require_admin)
+):
+    clean_email = req.email.strip().lower()
+    existing = db.query(UserModel).filter(UserModel.email == clean_email).first()
+    if existing:
+        raise HTTPException(status_code=400, detail="Email sudah terdaftar.")
+
+    user = UserModel(
+        email=clean_email,
+        name=req.name.strip(),
+        password_hash=get_password_hash(req.password),
+        role=req.role or "Employee",
+        employee_id=req.employee_id
+    )
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+
+    return {
+        "success": True,
+        "user": {
+            "id": user.id,
+            "email": user.email,
+            "name": user.name,
+            "role": user.role,
+            "employeeId": user.employee_id
+        }
+    }
+
+@router.put("/users/{user_id}/password")
+def update_user_password(
+    user_id: str,
+    req: PasswordUpdate,
+    db: Session = Depends(get_db),
+    current_user: UserModel = Depends(get_current_user)
+):
+    if current_user.role != "Admin" and current_user.id != user_id:
+        raise HTTPException(status_code=403, detail="Tidak memiliki izin untuk mengubah password pengguna ini.")
+    user = db.query(UserModel).filter(UserModel.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User tidak ditemukan.")
+    user.password_hash = get_password_hash(req.new_password)
+    db.commit()
+    return {"success": True, "message": "Password berhasil diperbarui."}
+
+@router.delete("/users/{user_id}")
+def delete_user(user_id: str, db: Session = Depends(get_db), admin: UserModel = Depends(require_admin)):
+    user = db.query(UserModel).filter(UserModel.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User tidak ditemukan.")
+    if user.email == "admin@ctso.net":
+        raise HTTPException(status_code=400, detail="Akun Super Admin utama tidak dapat dihapus.")
+    db.delete(user)
+    db.commit()
+    return {"success": True}

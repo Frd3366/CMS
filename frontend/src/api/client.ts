@@ -1,0 +1,83 @@
+// API Client for CTSO Management System
+const API_BASE = '/api';
+
+function getAuthHeaders(): Record<string, string> {
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json'
+  };
+  try {
+    const token = localStorage.getItem('ctso_cms_token');
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+  } catch {
+    // Ignore localStorage access restrictions
+  }
+  return headers;
+}
+
+export const apiClient = {
+  async isBackendAvailable(): Promise<boolean> {
+    try {
+      const res = await fetch(`${API_BASE}/health`, { signal: AbortSignal.timeout(2000) });
+      return res.ok;
+    } catch {
+      return false;
+    }
+  },
+
+  async get<T>(endpoint: string, fallback: T): Promise<T> {
+    try {
+      const res = await fetch(`${API_BASE}${endpoint}`, {
+        headers: getAuthHeaders()
+      });
+      if (!res.ok) return fallback;
+      return await res.json();
+    } catch {
+      return fallback;
+    }
+  },
+
+  async post<T = any>(endpoint: string, data: any): Promise<{ success: boolean; data?: T; error?: string }> {
+    try {
+      const res = await fetch(`${API_BASE}${endpoint}`, {
+        method: 'POST',
+        headers: getAuthHeaders(),
+        body: JSON.stringify(data)
+      });
+      const json = await res.json();
+      if (!res.ok) return { success: false, error: json.detail || 'Request failed' };
+      return { success: true, data: json };
+    } catch (e: any) {
+      return { success: false, error: e.message };
+    }
+  },
+
+  async put<T = any>(endpoint: string, data: any): Promise<{ success: boolean; data?: T; error?: string }> {
+    try {
+      const res = await fetch(`${API_BASE}${endpoint}`, {
+        method: 'PUT',
+        headers: getAuthHeaders(),
+        body: JSON.stringify(data)
+      });
+      const json = await res.json();
+      if (!res.ok) return { success: false, error: json.detail || 'Request failed' };
+      return { success: true, data: json };
+    } catch (e: any) {
+      return { success: false, error: e.message };
+    }
+  },
+
+  async delete(endpoint: string): Promise<{ success: boolean; error?: string }> {
+    try {
+      const res = await fetch(`${API_BASE}${endpoint}`, {
+        method: 'DELETE',
+        headers: getAuthHeaders()
+      });
+      if (!res.ok) return { success: false, error: 'Delete failed' };
+      return { success: true };
+    } catch (e: any) {
+      return { success: false, error: e.message };
+    }
+  }
+};
