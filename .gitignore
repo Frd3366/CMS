@@ -1,0 +1,27 @@
+# Operating System
+.DS_Store
+Thumbs.db
+
+# AI Assistant & IDE scratch files
+.agents/
+.gemini/
+AGENTS.md
+GEMINI.md
+DESIGN.md
+
+# Archives & Temporary binaries
+*.tar.gz
+*.zip
+*.log
+
+# Node dependencies & build artifacts
+node_modules/
+dist/
+
+# Python cache & virtual environments
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+.venv/
+.env
