@@ -19,10 +19,11 @@ import {
   Trash2,
   Eye,
   FileText,
-  StickyNote
+  StickyNote,
+  X
 } from 'lucide-react';
 import { ScheduleAssignment, WorkLocation } from '../types';
-import { getShiftBadgeStyle, getJobdeskBadgeStyle, getContrastTextColor, toCssSlug, parseJobdeskTasks } from '../utils/codeStyles';
+import { getShiftBadgeStyle, getJobdeskBadgeStyle, getContrastTextColor, toCssSlug, parseJobdeskTasks, getAgentPillStyle } from '../utils/codeStyles';
 import { getStoredHolidays, saveStoredHolidays, HolidayRecord } from '../utils/holidayUtils';
 
 export const JobdeskView: React.FC = () => {
@@ -93,8 +94,48 @@ export const JobdeskView: React.FC = () => {
   const [formJobdeskCode, setFormJobdeskCode] = useState('CT1');
   const [formLocation, setFormLocation] = useState<WorkLocation>('Badung');
   const [formShiftCode, setFormShiftCode] = useState('Pagi 7');
+  const [formAgent, setFormAgent] = useState<string>('');
   const [formNote, setFormNote] = useState('');
   const [selectedAssignmentForView, setSelectedAssignmentForView] = useState<ScheduleAssignment | null>(null);
+
+  // Dynamic Agent Criteria Management (Persisted in localStorage)
+  const [customAgents, setCustomAgents] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem('ctso_cms_custom_agents');
+      if (saved) return JSON.parse(saved);
+    } catch {}
+    return ['Agent 1', 'Agent 2', 'Agent 3', 'Agent 4'];
+  });
+  const [newAgentInput, setNewAgentInput] = useState<string>('');
+  const [isManagingAgents, setIsManagingAgents] = useState<boolean>(false);
+
+  const saveAgents = (agents: string[]) => {
+    setCustomAgents(agents);
+    try {
+      localStorage.setItem('ctso_cms_custom_agents', JSON.stringify(agents));
+    } catch {}
+  };
+
+  const handleAddAgent = (name: string) => {
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    if (!customAgents.includes(trimmed)) {
+      const next = [...customAgents, trimmed];
+      saveAgents(next);
+      setFormAgent(trimmed);
+      showToast(`Agent "${trimmed}" berhasil ditambahkan.`, 'success');
+    }
+    setNewAgentInput('');
+  };
+
+  const handleDeleteAgent = (name: string) => {
+    const next = customAgents.filter((a) => a !== name);
+    saveAgents(next);
+    if (formAgent === name) {
+      setFormAgent('');
+    }
+    showToast(`Agent "${name}" berhasil dihapus dari opsi.`, 'info');
+  };
 
   const canManageJobdesk = currentUser?.role === 'Admin' || currentUser?.role === 'SPV';
 
@@ -279,6 +320,7 @@ export const JobdeskView: React.FC = () => {
     setFormDate(dateStr);
     setFormJobdeskCode(preselectedJobdesk || 'CT1');
     setFormLocation((existingSched?.location as WorkLocation) || 'Badung');
+    setFormAgent(existingSched?.agent || '');
     setFormNote(existingSched?.note || '');
     if (existingSched?.shiftCode && existingSched.shiftCode !== 'OFF') {
       setFormShiftCode(existingSched.shiftCode);
@@ -312,6 +354,7 @@ export const JobdeskView: React.FC = () => {
       const res = updateSchedule(existing.id, {
         jobdeskCode: assignedCode,
         location: formLocation,
+        agent: formAgent.trim() || undefined,
         note: formNote.trim() || undefined
       });
       if (!res.success) {
@@ -333,6 +376,7 @@ export const JobdeskView: React.FC = () => {
         shiftCode: formShiftCode || 'Pagi 7',
         jobdeskCode: assignedCode,
         location: formLocation,
+        agent: formAgent.trim() || undefined,
         publicationStatus: 'Published',
         note: formNote.trim() || undefined
       });
@@ -595,30 +639,32 @@ export const JobdeskView: React.FC = () => {
                           <span className="text-xs font-extrabold text-current truncate">
                             {item.employeeName}
                           </span>
-                          <div className="flex items-center gap-1.5 shrink-0 ml-2">
-                            {item.note && (
-                              <span
-                                className="p-0.5 rounded bg-black/10 dark:bg-white/20 text-current"
-                                title={`Ada catatan: ${item.note}`}
-                              >
-                                <StickyNote className="w-3.5 h-3.5" aria-hidden="true" />
-                              </span>
-                            )}
-                            <span className="text-[10px] font-mono text-current opacity-80">
-                              {item.employeeCode}
-                            </span>
-                          </div>
+                          <span className="text-[10px] font-mono text-current opacity-80 shrink-0 ml-2">
+                            {item.employeeCode}
+                          </span>
                         </div>
 
                         <div className="flex items-center justify-between text-[11px] pt-1.5 border-t border-current/15">
-                          <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold font-mono ${getShiftBadgeStyle(item.shiftCode).badge}`}>
-                            {item.shiftCode}
-                          </span>
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold font-mono ${getShiftBadgeStyle(item.shiftCode).badge}`}>
+                              {item.shiftCode}
+                            </span>
+                            {item.agent && (
+                              <span className={`px-1.5 py-0.5 rounded text-[9px] font-black font-mono shadow-2xs inline-flex items-center gap-1 ${getAgentPillStyle(item.agent).bg}`}>
+                                <span className={`w-1.5 h-1.5 rounded-full ${getAgentPillStyle(item.agent).dot}`} />
+                                <span>{item.agent}</span>
+                              </span>
+                            )}
+                          </div>
 
-                          <span className="flex items-center gap-1 text-current opacity-85 text-[10px] font-medium font-mono">
-                            <MapPin className="w-3 h-3 text-current opacity-75" aria-hidden="true" />
-                            {item.location || '-'}
-                          </span>
+                          {item.note && (
+                            <span
+                              className="p-0.5 rounded bg-black/10 dark:bg-white/20 text-current ml-auto"
+                              title={`Ada catatan: ${item.note}`}
+                            >
+                              <StickyNote className="w-3.5 h-3.5" aria-hidden="true" />
+                            </span>
+                          )}
                         </div>
                       </button>
                     ))
@@ -743,7 +789,7 @@ export const JobdeskView: React.FC = () => {
                               </div>
                             ) : assignment.jobdeskCode ? (
                               <div
-                                className={`py-2 px-2.5 rounded-xl border-0 flex flex-col justify-between text-left transition-all ${
+                                className={`py-1.5 px-2 rounded-xl border-0 flex flex-col justify-between text-left transition-all ${
                                   getJobdeskBadgeStyle(assignment.jobdeskCode).card
                                 }`}
                               >
@@ -751,19 +797,27 @@ export const JobdeskView: React.FC = () => {
                                   <span className="font-mono font-black text-xs uppercase tracking-tight">
                                     {assignment.jobdeskCode}
                                   </span>
-                                  <div className="flex items-center gap-1">
-                                    {assignment.note && (
-                                      <span className="p-0.5 rounded bg-black/10 dark:bg-white/20 text-current" title={`Ada catatan: ${assignment.note}`}>
-                                        <StickyNote className="w-3 h-3" aria-hidden="true" />
-                                      </span>
-                                    )}
-                                    <span className="px-1.5 py-0.5 rounded text-[9px] font-bold font-mono bg-black/10 dark:bg-white/15 text-current">
-                                      {assignment.shiftCode}
-                                    </span>
-                                  </div>
+                                  <span className="px-1.5 py-0.5 rounded text-[9px] font-bold font-mono bg-black/10 dark:bg-white/15 text-current">
+                                    {assignment.shiftCode}
+                                  </span>
                                 </div>
-                                <div className="text-[9px] font-semibold opacity-80 mt-1">
-                                  {assignment.location}
+                                <div className="flex items-center justify-between mt-1 min-h-[16px]">
+                                  <div>
+                                    {assignment.agent ? (
+                                      <span className={`px-1.5 py-0.5 rounded text-[8.5px] font-black font-mono shadow-2xs inline-flex items-center gap-1 ${getAgentPillStyle(assignment.agent).bg}`}>
+                                        <span className={`w-1 h-1 rounded-full ${getAgentPillStyle(assignment.agent).dot}`} />
+                                        <span className="truncate max-w-[65px]">{assignment.agent}</span>
+                                      </span>
+                                    ) : null}
+                                  </div>
+                                  {assignment.note && (
+                                    <span
+                                      className="p-0.5 rounded bg-black/10 dark:bg-white/20 text-current ml-auto"
+                                      title={`Ada catatan: ${assignment.note}`}
+                                    >
+                                      <StickyNote className="w-3 h-3" aria-hidden="true" />
+                                    </span>
+                                  )}
                                 </div>
                               </div>
                             ) : (
@@ -909,7 +963,7 @@ export const JobdeskView: React.FC = () => {
                               </div>
                             ) : assignment.jobdeskCode ? (
                               <div
-                                className={`py-2 px-2.5 rounded-xl border-0 flex flex-col justify-between text-left transition-all ${
+                                className={`py-1.5 px-2 rounded-xl border-0 flex flex-col justify-between text-left transition-all ${
                                   getJobdeskBadgeStyle(assignment.jobdeskCode).card
                                 }`}
                               >
@@ -917,19 +971,27 @@ export const JobdeskView: React.FC = () => {
                                   <span className="font-mono font-black text-xs uppercase tracking-tight">
                                     {assignment.jobdeskCode}
                                   </span>
-                                  <div className="flex items-center gap-1">
-                                    {assignment.note && (
-                                      <span className="p-0.5 rounded bg-black/10 dark:bg-white/20 text-current" title={`Ada catatan: ${assignment.note}`}>
-                                        <StickyNote className="w-3 h-3" aria-hidden="true" />
-                                      </span>
-                                    )}
-                                    <span className="px-1.5 py-0.5 rounded text-[9px] font-bold font-mono bg-black/10 dark:bg-white/15 text-current">
-                                      {assignment.shiftCode}
-                                    </span>
-                                  </div>
+                                  <span className="px-1.5 py-0.5 rounded text-[9px] font-bold font-mono bg-black/10 dark:bg-white/15 text-current">
+                                    {assignment.shiftCode}
+                                  </span>
                                 </div>
-                                <div className="text-[9px] font-semibold opacity-80 mt-1">
-                                  {assignment.location}
+                                <div className="flex items-center justify-between mt-1 min-h-[16px]">
+                                  <div>
+                                    {assignment.agent ? (
+                                      <span className={`px-1.5 py-0.5 rounded text-[8.5px] font-black font-mono shadow-2xs inline-flex items-center gap-1 ${getAgentPillStyle(assignment.agent).bg}`}>
+                                        <span className={`w-1 h-1 rounded-full ${getAgentPillStyle(assignment.agent).dot}`} />
+                                        <span className="truncate max-w-[65px]">{assignment.agent}</span>
+                                      </span>
+                                    ) : null}
+                                  </div>
+                                  {assignment.note && (
+                                    <span
+                                      className="p-0.5 rounded bg-black/10 dark:bg-white/20 text-current ml-auto"
+                                      title={`Ada catatan: ${assignment.note}`}
+                                    >
+                                      <StickyNote className="w-3 h-3" aria-hidden="true" />
+                                    </span>
+                                  )}
                                 </div>
                               </div>
                             ) : (
@@ -1161,6 +1223,100 @@ export const JobdeskView: React.FC = () => {
             </div>
           </div>
 
+          {/* Kriteria Agent (Bisa Ditambah & Dihapus, warna berbeda setiap agent) */}
+          <div className="p-3.5 rounded-2xl border border-slate-200 dark:border-white/10 bg-slate-50/70 dark:bg-white/[0.02] space-y-2.5">
+            <div className="flex items-center justify-between">
+              <label className="block text-xs font-bold text-slate-700 dark:text-gray-300">
+                Kriteria Agent
+              </label>
+              <button
+                type="button"
+                onClick={() => setIsManagingAgents(!isManagingAgents)}
+                className="text-[11px] font-semibold text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-1"
+              >
+                <Plus className="w-3 h-3" />
+                <span>{isManagingAgents ? 'Tutup Pengelola Agent' : '+ Tambah / Hapus Opsi Agent'}</span>
+              </button>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <div className="relative flex-1">
+                <select
+                  value={formAgent}
+                  onChange={(e) => setFormAgent(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-[#202023] text-xs font-bold text-slate-800 dark:text-white focus:outline-none focus:border-[#F9C900]"
+                >
+                  <option value="" className="bg-white dark:bg-[#202023] text-slate-500 font-normal">-- Tanpa Kriteria Agent --</option>
+                  {customAgents.map((ag) => (
+                    <option key={ag} value={ag} className="bg-white dark:bg-[#202023] text-slate-800 dark:text-white">
+                      {ag}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {formAgent && (
+                <div className="shrink-0">
+                  <span className={`px-2.5 py-1 rounded-lg text-[10px] font-black font-mono shadow-2xs inline-flex items-center gap-1.5 ${getAgentPillStyle(formAgent).bg}`}>
+                    <span className={`w-1.5 h-1.5 rounded-full ${getAgentPillStyle(formAgent).dot}`} />
+                    <span>{formAgent}</span>
+                  </span>
+                </div>
+              )}
+            </div>
+
+            {/* Sub-Panel: Add / Delete Custom Agent Tags */}
+            {isManagingAgents && (
+              <div className="pt-2.5 border-t border-slate-200 dark:border-white/10 space-y-2">
+                <div className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    value={newAgentInput}
+                    onChange={(e) => setNewAgentInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        handleAddAgent(newAgentInput);
+                      }
+                    }}
+                    placeholder="Nama agent baru (misal: Agent 5)..."
+                    className="flex-1 px-3 py-1.5 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-[#202023] text-xs text-slate-800 dark:text-white focus:outline-none focus:border-[#F9C900]"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => handleAddAgent(newAgentInput)}
+                    className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold shrink-0 shadow-2xs"
+                  >
+                    Tambah
+                  </button>
+                </div>
+
+                <div className="flex flex-wrap gap-1.5 pt-1">
+                  {customAgents.map((ag) => (
+                    <span
+                      key={ag}
+                      className={`px-2 py-0.5 rounded-md text-[10px] font-bold font-mono inline-flex items-center gap-1.5 ${getAgentPillStyle(ag).bg}`}
+                    >
+                      <span className={`w-1.5 h-1.5 rounded-full ${getAgentPillStyle(ag).dot}`} />
+                      <span>{ag}</span>
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteAgent(ag)}
+                        className="hover:text-rose-600 text-current opacity-70 hover:opacity-100 ml-0.5"
+                        title={`Hapus ${ag} dari daftar`}
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    </span>
+                  ))}
+                  {customAgents.length === 0 && (
+                    <span className="text-[11px] text-slate-400 italic">Belum ada agent tersimpan. Tambah nama di atas.</span>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+
           {/* Note Input */}
           <div>
             <label className="block text-xs font-bold text-slate-700 dark:text-gray-300 mb-1 flex items-center justify-between">
@@ -1284,6 +1440,19 @@ export const JobdeskView: React.FC = () => {
                   <span className="text-slate-500 dark:text-gray-400 text-[11px]">Lokasi Tugas:</span>
                   <div className="font-bold text-slate-800 dark:text-white mt-0.5">
                     {selectedAssignmentForView.location || 'Badung'}
+                  </div>
+                </div>
+                <div>
+                  <span className="text-slate-500 dark:text-gray-400 text-[11px]">Kriteria Agent:</span>
+                  <div className="font-bold text-slate-800 dark:text-white mt-0.5 flex items-center gap-1.5">
+                    {selectedAssignmentForView.agent ? (
+                      <span className={`px-2 py-0.5 rounded text-[10px] font-black font-mono inline-flex items-center gap-1 ${getAgentPillStyle(selectedAssignmentForView.agent).bg}`}>
+                        <span className={`w-1.5 h-1.5 rounded-full ${getAgentPillStyle(selectedAssignmentForView.agent).dot}`} />
+                        <span>{selectedAssignmentForView.agent}</span>
+                      </span>
+                    ) : (
+                      <span className="text-slate-400 font-normal italic">-</span>
+                    )}
                   </div>
                 </div>
               </div>
