@@ -113,7 +113,9 @@ def update_shift(shift_id: str, req: ShiftUpdate, db: Session = Depends(get_db))
 
 @router.delete("/shifts/{shift_id}")
 def delete_shift(shift_id: str, db: Session = Depends(get_db)):
-    shift = db.query(ShiftModel).filter(ShiftModel.id == shift_id).first()
+    shift = db.query(ShiftModel).filter(
+        (ShiftModel.id == shift_id) | (ShiftModel.code == shift_id)
+    ).first()
     if not shift:
         raise HTTPException(status_code=404, detail="Shift tidak ditemukan.")
     db.delete(shift)
@@ -161,7 +163,9 @@ def update_jobdesk(jobdesk_id: str, req: JobdeskUpdate, db: Session = Depends(ge
 
 @router.delete("/jobdesks/{jobdesk_id}")
 def delete_jobdesk(jobdesk_id: str, db: Session = Depends(get_db)):
-    j = db.query(JobdeskModel).filter(JobdeskModel.id == jobdesk_id).first()
+    j = db.query(JobdeskModel).filter(
+        (JobdeskModel.id == jobdesk_id) | (JobdeskModel.code == jobdesk_id)
+    ).first()
     if not j:
         raise HTTPException(status_code=404, detail="Jobdesk tidak ditemukan.")
     db.delete(j)
@@ -630,6 +634,10 @@ def push_all_data(payload: dict, db: Session = Depends(get_db), current_user: Us
 
     # 2. Sync Shifts
     if "shifts" in payload and isinstance(payload["shifts"], list):
+        active_shift_codes = {s.get("code") for s in payload["shifts"] if s.get("code")}
+        if active_shift_codes:
+            db.query(ShiftModel).filter(ShiftModel.code.notin_(active_shift_codes)).delete(synchronize_session=False)
+
         for s_data in payload["shifts"]:
             exist = db.query(ShiftModel).filter(ShiftModel.code == s_data.get("code")).first()
             if exist:
@@ -655,6 +663,10 @@ def push_all_data(payload: dict, db: Session = Depends(get_db), current_user: Us
 
     # 3. Sync Jobdesks
     if "jobdesks" in payload and isinstance(payload["jobdesks"], list):
+        active_jd_codes = {j.get("code") for j in payload["jobdesks"] if j.get("code")}
+        if active_jd_codes:
+            db.query(JobdeskModel).filter(JobdeskModel.code.notin_(active_jd_codes)).delete(synchronize_session=False)
+
         for j_data in payload["jobdesks"]:
             exist = db.query(JobdeskModel).filter(JobdeskModel.code == j_data.get("code")).first()
             if exist:

@@ -1843,6 +1843,22 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     (shift: Omit<ShiftMasterItem, 'id'>) => {
       const newShift: ShiftMasterItem = { ...shift, id: `sh_${Date.now()}` };
       setShifts((prev) => [...prev, newShift]);
+
+      apiClient.isBackendAvailable().then((isUp) => {
+        if (isUp) {
+          apiClient.post('/shifts', {
+            code: shift.code,
+            name: shift.name,
+            start_time: shift.startTime,
+            end_time: shift.endTime,
+            end_day_offset: shift.endDayOffset || 0,
+            color: shift.color || '#F9C900',
+            is_off: shift.isOff || false,
+            is_active: shift.status === 'active'
+          }).catch((e) => console.warn('Failed to add shift on backend', e));
+        }
+      });
+
       addActivityLog('CREATE_SHIFT_MASTER', 'schedule', `Menambah master shift ${shift.name} (${shift.code})`);
     },
     [addActivityLog]
@@ -1864,6 +1880,22 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           prev.map((sc) => (sc.shiftCode === oldCode ? { ...sc, shiftCode: newCode } : sc))
         );
       }
+
+      apiClient.isBackendAvailable().then((isUp) => {
+        if (isUp) {
+          apiClient.put(`/shifts/${id}`, {
+            code: shift.code,
+            name: shift.name,
+            start_time: shift.startTime,
+            end_time: shift.endTime,
+            end_day_offset: shift.endDayOffset,
+            color: shift.color,
+            is_off: shift.isOff,
+            is_active: shift.status ? shift.status === 'active' : undefined
+          }).catch((e) => console.warn('Failed to update shift on backend', e));
+        }
+      });
+
       addActivityLog('UPDATE_SHIFT_MASTER', 'schedule', `Memperbarui master shift #${id}`);
     },
     [addActivityLog]
@@ -1871,7 +1903,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const deleteShift = useCallback(
     (id: string) => {
-      const target = shifts.find((s) => s.id === id);
+      const target = shifts.find((s) => s.id === id || s.code === id);
       if (!target) return { success: false, error: 'Shift tidak ditemukan.' };
 
       const usedCount = schedules.filter((s) => s.shiftCode === target.code).length;
@@ -1882,7 +1914,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         };
       }
 
-      setShifts((prev) => prev.filter((s) => s.id !== id));
+      setShifts((prev) => prev.filter((s) => s.id !== target.id && s.code !== target.code));
+
+      apiClient.isBackendAvailable().then((isUp) => {
+        if (isUp) {
+          apiClient.delete(`/shifts/${target.id}`).catch(() => {
+            // Fallback delete by code
+            apiClient.delete(`/shifts/${encodeURIComponent(target.code)}`).catch((e) =>
+              console.warn('Failed to delete shift on backend', e)
+            );
+          });
+        }
+      });
+
       addActivityLog('DELETE_SHIFT_MASTER', 'schedule', `Menghapus master shift ${target.name} (${target.code})`);
       return { success: true };
     },
@@ -1893,6 +1937,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     (jobdesk: Omit<JobdeskItem, 'id'>) => {
       const newJd: JobdeskItem = { ...jobdesk, id: `jd_${Date.now()}` };
       setJobdesks((prev) => [...prev, newJd]);
+
+      apiClient.isBackendAvailable().then((isUp) => {
+        if (isUp) {
+          apiClient.post('/jobdesks', {
+            code: jobdesk.code,
+            name: jobdesk.name,
+            description: jobdesk.description || '',
+            color: jobdesk.color || '#38BDF8',
+            is_active: jobdesk.status === 'active'
+          }).catch((e) => console.warn('Failed to add jobdesk on backend', e));
+        }
+      });
+
       addActivityLog('CREATE_JOBDESK_MASTER', 'schedule', `Menambah kode jobdesk ${jobdesk.code}`);
     },
     [addActivityLog]
@@ -1914,6 +1971,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           prev.map((sc) => (sc.jobdeskCode === oldCode ? { ...sc, jobdeskCode: newCode } : sc))
         );
       }
+
+      apiClient.isBackendAvailable().then((isUp) => {
+        if (isUp) {
+          apiClient.put(`/jobdesks/${id}`, {
+            code: jobdesk.code,
+            name: jobdesk.name,
+            description: jobdesk.description,
+            color: jobdesk.color,
+            is_active: jobdesk.status ? jobdesk.status === 'active' : undefined
+          }).catch((e) => console.warn('Failed to update jobdesk on backend', e));
+        }
+      });
+
       addActivityLog('UPDATE_JOBDESK_MASTER', 'schedule', `Memperbarui master jobdesk #${id}`);
     },
     [addActivityLog]
@@ -1921,7 +1991,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const deleteJobdesk = useCallback(
     (id: string) => {
-      const target = jobdesks.find((j) => j.id === id);
+      const target = jobdesks.find((j) => j.id === id || j.code === id);
       if (!target) return { success: false, error: 'Jobdesk tidak ditemukan.' };
 
       const usedCount = schedules.filter((s) => s.jobdeskCode === target.code).length;
@@ -1932,7 +2002,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         };
       }
 
-      setJobdesks((prev) => prev.filter((j) => j.id !== id));
+      setJobdesks((prev) => prev.filter((j) => j.id !== target.id && j.code !== target.code));
+
+      apiClient.isBackendAvailable().then((isUp) => {
+        if (isUp) {
+          apiClient.delete(`/jobdesks/${target.id}`).catch(() => {
+            apiClient.delete(`/jobdesks/${encodeURIComponent(target.code)}`).catch((e) =>
+              console.warn('Failed to delete jobdesk on backend', e)
+            );
+          });
+        }
+      });
+
       addActivityLog('DELETE_JOBDESK_MASTER', 'schedule', `Menghapus master jobdesk ${target.name} (${target.code})`);
       return { success: true };
     },
