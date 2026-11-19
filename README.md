@@ -50,33 +50,6 @@ cms/
 
 ---
 
-## 🚀 Cara Cepat Pasang di Debian Server (`/root/project2`)
-
-### 1. Upload ke Server Debian
-Dari terminal komputer Mac Anda:
-```bash
-scp -r /Users/ferdi/.gemini/antigravity/scratch/cms/* root@IP_SERVER_DEBIAN:/root/project2/
-```
-
-### 2. Eksekusi Installer di Server
-Login SSH ke server Debian Anda:
-```bash
-ssh root@IP_SERVER_DEBIAN
-cd /root/project2/scripts
-chmod +x *.sh
-bash install.sh
-```
-
-Aplikasi langsung online di:
-```
-http://IP_SERVER_DEBIAN:8080
-```
-- **Login Admin**: `admin@ctso.net`
-- **Password**: `admin`
-- **Database**: PostgreSQL (`cms_db`) dalam kondisi **BERSIH / KOSONG**, siap pakai!
-
----
-
 ## 📦 Cakupan Fitur Utama
 
 ### 1. Dashboard Operasional (PRD Section 4)
@@ -139,31 +112,3 @@ http://IP_SERVER_DEBIAN:8080
 - **Profil Mandiri & Ganti Password (PRD 3.1 & 7.2)**: Pembaruan data kontak dan ganti password akun.
 
 ---
-
-## 🛠️ Panduan Menjalankan Aplikasi
-
-Aplikasi dibangun dengan **React 18 + TypeScript + Vite + Tailwind CSS** dan siap dijalankan langsung di lingkungan lokal:
-
-### 1. Buka Direktori Project
-```bash
-cd "/Users/ferdi/.gemini/antigravity/scratch/CMS - CTSO Management System"
-```
-
-### 2. Jalankan Server Preview / Development
-```bash
-# Development mode (Hot-reload)
-npm run dev
-
-# Atau jalankan bundle produksi terverifikasi
-npm run preview
-```
-
-Buka URL di browser:
-👉 **`http://localhost:4173/`** atau **`http://localhost:5173/`**
-
-### 3. Akun Demo untuk Pengujian Cepat:
-- **Admin**: `budi.santoso@ctso.internal` (Akses administratif penuh, generator, publikasi, penghapusan histori)
-- **SPV**: `wayan.sudirta@ctso.internal` (Supervisor Hub Badung, approval tukar shift & cuti, team scope)
-- **Employee**: `putu.wijaya@ctso.internal` (Staff teknis, melihat roster Published, pengajuan tukar shift & cuti)
-
-*(Tersedia tombol satu klik pada halaman Login dan Role Switcher langsung di Top Bar untuk beralih persona tanpa repot logout-login).*
