@@ -38,8 +38,10 @@ services:
     restart: always
     depends_on:
       - backend
+    expose:
+      - "80"
     ports:
-      - "${WEB_PORT:-8080}:80"
+      - "${WEB_PORT:-8088}:80"
     labels:
       - "coolify.managed=true"
 
