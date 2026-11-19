@@ -357,7 +357,7 @@ export const Dashboard: React.FC = () => {
               <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800/50">
                 {kpis.activeEmployees} Aktif
               </span>
-              <span className="text-[11px] text-slate-600 dark:text-gray-300">Database staf</span>
+              <span className="text-[11px] text-slate-600 dark:text-gray-300">Employee</span>
             </div>
           </div>
         </button>
@@ -389,7 +389,7 @@ export const Dashboard: React.FC = () => {
                 On Duty
               </span>
               <span className="text-[11px] text-slate-600 dark:text-gray-300">
-                {kpis.workingToday > 0 ? 'Shift aktif' : 'Belum ada dinas'}
+                {kpis.workingToday > 0 ? 'Today Shift' : 'Idle'}
               </span>
             </div>
           </div>
@@ -429,7 +429,7 @@ export const Dashboard: React.FC = () => {
                 <span className="w-1.5 h-1.5 rounded-full bg-rose-600" />
                 Libur / Cuti
               </span>
-              <span className="text-[11px] text-slate-600 dark:text-gray-300">Shift Rest & Cuti</span>
+              <span className="text-[11px] text-slate-600 dark:text-gray-300">Holiday</span>
             </div>
           </div>
         </button>
@@ -463,7 +463,7 @@ export const Dashboard: React.FC = () => {
                 Kerobokan
               </span>
               <span className="text-[11px] text-slate-600 dark:text-gray-300">
-                {kpis.badungShift > 0 ? 'Personel aktif' : 'Nol dinas'}
+                {kpis.badungShift > 0 ? 'Active' : 'Not active'}
               </span>
             </div>
           </div>
@@ -498,7 +498,7 @@ export const Dashboard: React.FC = () => {
                 Gatsu Timur
               </span>
               <span className="text-[11px] text-slate-600 dark:text-gray-300">
-                {kpis.denpasarShift > 0 ? 'Personel aktif' : 'Nol dinas'}
+                {kpis.denpasarShift > 0 ? 'Actvive' : 'Not Active'}
               </span>
             </div>
           </div>
@@ -525,7 +525,7 @@ export const Dashboard: React.FC = () => {
                 onClick={() => navigate('/jobdesk')}
                 className="text-xs font-bold text-indigo-700 dark:text-indigo-400 hover:underline flex items-center gap-1.5 self-start sm:self-auto"
               >
-                <span>Buka Matriks Jobdesk</span>
+                <span>Openn Jobdesk</span>
                 <ArrowRight className="w-3.5 h-3.5" aria-hidden="true" />
               </button>
             </div>
@@ -627,7 +627,7 @@ export const Dashboard: React.FC = () => {
                   <span>Personnel Roster Directory</span>
                 </h2>
                 <p className="text-xs text-slate-600 dark:text-gray-300 mt-1">
-                  Daftar personel terjadwal untuk {selectedDate} ({filteredRoster.length} record)
+                  {selectedDate} ({filteredRoster.length} record)
                 </p>
               </div>
 
@@ -796,7 +796,7 @@ export const Dashboard: React.FC = () => {
                 <Clock className="w-4 h-4 text-indigo-600 dark:text-indigo-400" aria-hidden="true" />
                 <span>Distribusi Shift</span>
               </h2>
-              <span className="text-[11px] text-slate-600 dark:text-gray-300">Klik untuk melihat detail</span>
+              <span className="text-[11px] text-slate-600 dark:text-gray-300">Click to View</span>
             </div>
 
             <div className="space-y-3">
