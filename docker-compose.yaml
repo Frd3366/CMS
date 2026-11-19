@@ -1,0 +1,47 @@
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: cms_postgres
+    restart: always
+    environment:
+      POSTGRES_DB: ${DB_NAME:-cms_db}
+      POSTGRES_USER: ${DB_USER:-cms_user}
+      POSTGRES_PASSWORD: ${DB_PASS:-cms_secret_password_change_me}
+    volumes:
+      - cms_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-cms_user} -d ${DB_NAME:-cms_db}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: cms_backend
+    restart: always
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+psycopg2://${DB_USER:-cms_user}:${DB_PASS:-cms_secret_password_change_me}@db:5432/${DB_NAME:-cms_db}
+      SECRET_KEY: ${SECRET_KEY:-ctso_cms_super_secret_jwt_key_coolify_change_me_in_production}
+      PORT: 8001
+      CORS_ORIGINS: "*"
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: cms_frontend
+    restart: always
+    depends_on:
+      - backend
+    ports:
+      - "${WEB_PORT:-8080}:80"
+    labels:
+      - "coolify.managed=true"
+
+volumes:
+  cms_db_data:
