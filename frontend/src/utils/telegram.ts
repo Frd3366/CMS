@@ -1,5 +1,6 @@
 // Telegram Alert Notification Helper for CTSO Management System
 // Format 2: Emoji Minimalis & Quick-Scan
+import { API_BASE } from '../api/client';
 
 export interface TelegramConfig {
   enabled: boolean;
@@ -84,9 +85,9 @@ export const sendTelegramAlert = async (
 
   const messageText = buildTelegramMessage(data);
 
-  // Attempt 1: Try through backend API (/api/telegram/send)
+  // Attempt 1: Try through backend API
   try {
-    const backendRes = await fetch('/api/telegram/send', {
+    const backendRes = await fetch(`${API_BASE}/telegram/send`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({

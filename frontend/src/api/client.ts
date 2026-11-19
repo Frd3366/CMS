@@ -1,5 +1,5 @@
 // API Client for CTSO Management System
-const API_BASE = '/api';
+export const API_BASE = (import.meta.env.BASE_URL || '/').replace(/\/$/, '') + '/api';
 
 function getAuthHeaders(): Record<string, string> {
   const headers: Record<string, string> = {

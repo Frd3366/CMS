@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
+import { API_BASE } from '../../api/client';
 import {
   getGoogleSheetsConfig,
   saveGoogleSheetsConfig,
@@ -39,7 +40,7 @@ export const GoogleSheetsBackupModal: React.FC<GoogleSheetsBackupModalProps> = (
   useEffect(() => {
     if (!isOpen) return;
     setConfig(getGoogleSheetsConfig());
-    fetch('/api/gsheets/config')
+    fetch(`${API_BASE}/gsheets/config`)
       .then((res) => (res.ok ? res.json() : null))
       .then((data) => {
         if (data && (data.sheetUrl || data.scriptUrl)) {
@@ -66,7 +67,7 @@ export const GoogleSheetsBackupModal: React.FC<GoogleSheetsBackupModalProps> = (
     e.preventDefault();
     saveGoogleSheetsConfig(config);
     try {
-      await fetch('/api/gsheets/config', {
+      await fetch(`${API_BASE}/gsheets/config`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(config)

@@ -1,5 +1,6 @@
 // Google Sheets Auto-Backup Helper for CTSO Management System
 // Supports custom Google Sheet URL (changeable anytime) and configurable interval (default: 60 mins / 1 hour)
+import { API_BASE } from '../api/client';
 
 export interface GoogleSheetsBackupConfig {
   enabled: boolean;
@@ -175,9 +176,9 @@ export const executeGoogleSheetsBackup = async (
     };
   }
 
-  // Attempt 1: Via Backend API (/api/gsheets/backup)
+  // Attempt 1: Via Backend API
   try {
-    const res = await fetch('/api/gsheets/backup', {
+    const res = await fetch(`${API_BASE}/gsheets/backup`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({

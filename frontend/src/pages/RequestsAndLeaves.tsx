@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
+import { API_BASE } from '../api/client';
 import { RosterChangeRequest, LeaveRecord, RequestType, LeaveType } from '../types';
 import { getShiftBadgeStyle, getJobdeskBadgeStyle } from '../utils/codeStyles';
 import {
@@ -91,7 +92,7 @@ export const RequestsAndLeaves: React.FC = () => {
 
   // Sync Telegram config with backend on load
   useEffect(() => {
-    fetch('/api/telegram/config')
+    fetch(`${API_BASE}/telegram/config`)
       .then((res) => (res.ok ? res.json() : null))
       .then((data) => {
         if (data && (data.botToken || data.chatId)) {
@@ -166,7 +167,7 @@ export const RequestsAndLeaves: React.FC = () => {
     e.preventDefault();
     saveTelegramConfig(telegramConfig);
     try {
-      await fetch('/api/telegram/config', {
+      await fetch(`${API_BASE}/telegram/config`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(telegramConfig)

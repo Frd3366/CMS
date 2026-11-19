@@ -41,7 +41,7 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode; allowedRoles?: ('Adm
 export const App: React.FC = () => {
   return (
     <ThemeProvider>
-      <BrowserRouter>
+      <BrowserRouter basename="/cms">
         <ModalProvider>
           <AuthProvider>
             <ToastProvider>
