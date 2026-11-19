@@ -60,17 +60,14 @@ export const Dashboard: React.FC = () => {
     return m;
   }, [employees]);
 
-  // Helper to determine if a shift code counts as Off/Libur/Cuti
+  // Helper to determine if a shift code counts as Off/Libur/Cuti (Strict matching)
   const isOffShift = useCallback(
     (shiftCode: string): boolean => {
-      if (!shiftCode) return true;
+      if (!shiftCode) return false;
       const clean = shiftCode.trim().toUpperCase();
-      if (['OFF', 'LIBUR', 'CUTI', 'LEAVE', 'REST', 'L', 'DAY OFF'].includes(clean)) return true;
-      if (clean.includes('OFF') || clean.includes('LIBUR') || clean.includes('CUTI') || clean.includes('LEAVE')) {
-        return true;
-      }
       const match = shifts.find((sh) => sh.code.trim().toUpperCase() === clean);
-      if (match && match.isOff) return true;
+      if (match) return Boolean(match.isOff);
+      if (['OFF', 'LIBUR', 'CUTI', 'DAY OFF', 'REST DAY'].includes(clean)) return true;
       return false;
     },
     [shifts]
@@ -145,7 +142,7 @@ export const Dashboard: React.FC = () => {
     };
   }, [employees, dayAssignments, isOffShift, approvedLeavesToday, locationFilter, empMap]);
 
-  // Kanban Columns - Active Jobdesk Master with Working Personnel Only
+  // Kanban Columns - Active Master Jobdesks Only (Working Personnel Only)
   const kanbanColumns = useMemo(() => {
     // Only working personnel are allocated to active jobdesks (off day staff do not work jobdesks)
     const workingStaff = dayAssignments.filter((s) => !isOffShift(s.shiftCode));
@@ -153,33 +150,16 @@ export const Dashboard: React.FC = () => {
     const activeMasterJobdesks = jobdesks.filter((j) => j.status === 'active' || !j.status);
     const targetJobdesks = activeMasterJobdesks.length > 0 ? activeMasterJobdesks : jobdesks;
 
-    const cols = targetJobdesks.map((jd) => {
+    return targetJobdesks.map((jd) => {
       const items = workingStaff.filter((s) => s.jobdeskCode === jd.code);
       return {
         code: jd.code,
         name: jd.name || jd.code,
-        description: jd.description || '',
         color: jd.color || '#0284C7',
         textColor: jd.textColor,
         items
       };
     });
-
-    // Check if there are on-duty personnel without a designated master jobdesk code
-    const masterCodes = new Set(targetJobdesks.map((j) => j.code));
-    const unallocated = workingStaff.filter((s) => !s.jobdeskCode || !masterCodes.has(s.jobdeskCode));
-    if (unallocated.length > 0) {
-      cols.push({
-        code: 'UNASSIGNED',
-        name: 'General / Floating Support',
-        description: 'Personel dinas tanpa alokasi jobdesk khusus',
-        color: '#64748B',
-        textColor: '#FFFFFF',
-        items: unallocated
-      });
-    }
-
-    return cols;
   }, [dayAssignments, jobdesks, isOffShift]);
 
   // Shift Distribution Groups
@@ -341,7 +321,7 @@ export const Dashboard: React.FC = () => {
               })
             )
           }
-          className="text-left bg-white dark:bg-[#18181A] p-5 rounded-2xl border border-slate-200/80 dark:border-white/10 hover:border-indigo-400 dark:hover:border-indigo-500/60 shadow-xs transition-all flex flex-col justify-between min-h-[148px]"
+          className="text-left bg-white dark:bg-[#18181A] p-5 rounded-2xl border border-slate-200/80 dark:border-white/10 hover:border-slate-300 dark:hover:border-white/20 shadow-xs transition-all flex flex-col justify-between min-h-[148px]"
         >
           <div className="flex items-center justify-between w-full">
             <span className="text-xs font-semibold text-slate-600 dark:text-gray-300">Total Personel</span>
@@ -371,7 +351,7 @@ export const Dashboard: React.FC = () => {
               kpis.workingAssignments
             )
           }
-          className="text-left bg-white dark:bg-[#18181A] p-5 rounded-2xl border border-slate-200/80 dark:border-white/10 hover:border-emerald-400 dark:hover:border-emerald-500/60 shadow-xs transition-all flex flex-col justify-between min-h-[148px]"
+          className="text-left bg-white dark:bg-[#18181A] p-5 rounded-2xl border border-slate-200/80 dark:border-white/10 hover:border-slate-300 dark:hover:border-white/20 shadow-xs transition-all flex flex-col justify-between min-h-[148px]"
         >
           <div className="flex items-center justify-between w-full">
             <span className="text-xs font-semibold text-slate-600 dark:text-gray-300">Working Today</span>
@@ -412,7 +392,7 @@ export const Dashboard: React.FC = () => {
             ];
             openKpiDetail(`Personel Libur & Cuti (${selectedDate})`, list);
           }}
-          className="text-left bg-white dark:bg-[#18181A] p-5 rounded-2xl border border-slate-200/80 dark:border-white/10 hover:border-rose-400 dark:hover:border-rose-500/60 shadow-xs transition-all flex flex-col justify-between min-h-[148px]"
+          className="text-left bg-white dark:bg-[#18181A] p-5 rounded-2xl border border-slate-200/80 dark:border-white/10 hover:border-slate-300 dark:hover:border-white/20 shadow-xs transition-all flex flex-col justify-between min-h-[148px]"
         >
           <div className="flex items-center justify-between w-full">
             <span className="text-xs font-semibold text-slate-600 dark:text-gray-300">Off Day</span>
@@ -445,7 +425,7 @@ export const Dashboard: React.FC = () => {
               )
             )
           }
-          className="text-left bg-white dark:bg-[#18181A] p-5 rounded-2xl border border-slate-200/80 dark:border-white/10 hover:border-amber-400 dark:hover:border-amber-500/60 shadow-xs transition-all flex flex-col justify-between min-h-[148px]"
+          className="text-left bg-white dark:bg-[#18181A] p-5 rounded-2xl border border-slate-200/80 dark:border-white/10 hover:border-slate-300 dark:hover:border-white/20 shadow-xs transition-all flex flex-col justify-between min-h-[148px]"
         >
           <div className="flex items-center justify-between w-full">
             <span className="text-xs font-semibold text-slate-600 dark:text-gray-300">Badung Hub</span>
@@ -480,7 +460,7 @@ export const Dashboard: React.FC = () => {
               )
             )
           }
-          className="text-left bg-white dark:bg-[#18181A] p-5 rounded-2xl border border-slate-200/80 dark:border-white/10 hover:border-sky-400 dark:hover:border-sky-500/60 shadow-xs transition-all flex flex-col justify-between min-h-[148px]"
+          className="text-left bg-white dark:bg-[#18181A] p-5 rounded-2xl border border-slate-200/80 dark:border-white/10 hover:border-slate-300 dark:hover:border-white/20 shadow-xs transition-all flex flex-col justify-between min-h-[148px]"
         >
           <div className="flex items-center justify-between w-full">
             <span className="text-xs font-semibold text-slate-600 dark:text-gray-300">Denpasar Hub</span>
@@ -537,30 +517,12 @@ export const Dashboard: React.FC = () => {
                   key={col.code}
                   className="bg-white dark:bg-[#18181A] rounded-xl border border-slate-200/80 dark:border-white/10 overflow-hidden flex flex-col shadow-xs"
                 >
-                  {/* Column Header with Code, Full Name, and Count Badge */}
-                  <div className="px-4 py-3.5 border-b border-slate-100 dark:border-white/10 bg-white dark:bg-[#18181A] flex items-center justify-between gap-2">
-                    <div className="space-y-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <span
-                          style={{
-                            backgroundColor: col.color,
-                            color: col.textColor || getContrastTextColor(col.color)
-                          }}
-                          className="text-xs font-black font-mono px-2.5 py-0.5 rounded-md shadow-2xs inline-block"
-                        >
-                          {col.code}
-                        </span>
-                        <h3 className="text-xs font-extrabold text-[#0F172A] dark:text-white truncate">
-                          {col.name}
-                        </h3>
-                      </div>
-                      {col.description && (
-                        <p className="text-[11px] text-slate-500 dark:text-gray-400 line-clamp-1 leading-snug">
-                          {col.description}
-                        </p>
-                      )}
-                    </div>
-                    <span className="shrink-0 text-[10px] font-mono font-bold px-2 py-0.5 rounded-full bg-slate-100 dark:bg-white/10 text-slate-700 dark:text-gray-300">
+                  {/* Column Header: Clean title without code badge or description */}
+                  <div className="px-4 py-3 border-b border-slate-100 dark:border-white/10 bg-white dark:bg-[#18181A] flex items-center justify-between gap-2">
+                    <h3 className="text-xs font-bold text-[#0F172A] dark:text-white truncate">
+                      {col.name}
+                    </h3>
+                    <span className="shrink-0 text-[10px] font-mono font-semibold px-2 py-0.5 rounded-full bg-slate-100 dark:bg-white/10 text-slate-600 dark:text-gray-300">
                       {col.items.length} Staff
                     </span>
                   </div>
@@ -619,75 +581,73 @@ export const Dashboard: React.FC = () => {
           </div>
 
           {/* Section: Personnel Roster Directory */}
-          <div className="bg-white dark:bg-[#18181A] p-6 rounded-2xl border border-slate-200/80 dark:border-white/10 shadow-xs space-y-5">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3.5">
-              <div>
-                <h2 className="text-sm font-black text-[#0F172A] dark:text-white tracking-tight flex items-center gap-2">
-                  <Users className="w-4 h-4 text-indigo-600 dark:text-indigo-400" aria-hidden="true" />
-                  <span>Personnel Roster Directory</span>
-                </h2>
-                <p className="text-xs text-slate-600 dark:text-gray-300 mt-1">
-                  {selectedDate} ({filteredRoster.length} record)
-                </p>
+          <div className="bg-white dark:bg-[#18181A] p-6 rounded-2xl border border-slate-200/80 dark:border-white/10 shadow-xs space-y-4">
+            <div>
+              <h2 className="text-sm font-black text-[#0F172A] dark:text-white tracking-tight flex items-center gap-2">
+                <Users className="w-4 h-4 text-slate-700 dark:text-slate-300" aria-hidden="true" />
+                <span>Personnel Roster Directory</span>
+              </h2>
+              <p className="text-xs text-slate-500 dark:text-gray-400 mt-0.5">
+                Daftar personel terjadwal untuk {selectedDate} ({filteredRoster.length} record)
+              </p>
+            </div>
+
+            {/* Left-Aligned & Compact Filter Bar */}
+            <div className="flex flex-wrap items-center justify-start gap-2 pt-1">
+              <div className="relative flex items-center">
+                <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 pointer-events-none z-10" aria-hidden="true" />
+                <input
+                  type="text"
+                  aria-label="Cari nama atau ID personel"
+                  placeholder="Cari nama, ID..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="pl-8 pr-2.5 h-8 text-[11px] rounded-lg border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-white/5 text-slate-800 dark:text-white placeholder-slate-400 w-44 sm:w-52 focus:outline-none focus:ring-1 focus:ring-slate-400"
+                />
               </div>
 
-              {/* Filters Bar: Search, Shift, Jobdesk, Duty Status */}
-              <div className="flex items-center gap-2 flex-wrap">
-                <div className="relative flex items-center">
-                  <Search className="w-3.5 h-3.5 text-slate-500 absolute left-3 pointer-events-none z-10" aria-hidden="true" />
-                  <input
-                    type="text"
-                    aria-label="Cari nama atau ID personel"
-                    placeholder="Cari nama, ID..."
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    className="pl-9 pr-3.5 py-1.5 text-xs rounded-xl border border-slate-200/80 dark:border-white/10 bg-slate-50 dark:bg-white/5 text-[#0F172A] dark:text-white placeholder-slate-500 shadow-2xs focus:ring-1 focus:ring-indigo-500"
-                  />
-                </div>
+              {/* Filter Shift */}
+              <select
+                aria-label="Filter berdasarkan shift"
+                value={filterShift}
+                onChange={(e) => setFilterShift(e.target.value)}
+                className="h-8 px-2.5 text-[11px] rounded-lg border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-white/5 text-slate-700 dark:text-gray-200 font-medium focus:outline-none"
+              >
+                <option value="all">Semua Shift</option>
+                {shifts.map((sh) => (
+                  <option key={sh.id} value={sh.code}>
+                    {sh.code} {sh.isOff ? '(Libur)' : ''}
+                  </option>
+                ))}
+              </select>
 
-                {/* Filter Shift */}
-                <select
-                  aria-label="Filter berdasarkan shift"
-                  value={filterShift}
-                  onChange={(e) => setFilterShift(e.target.value)}
-                  className="px-3 py-1.5 text-xs rounded-xl border border-slate-200/80 dark:border-white/10 bg-slate-50 dark:bg-white/5 text-[#0F172A] dark:text-white font-semibold shadow-2xs"
-                >
-                  <option value="all">Semua Shift</option>
-                  {shifts.map((sh) => (
-                    <option key={sh.id} value={sh.code}>
-                      {sh.code} {sh.isOff ? '(Libur)' : ''}
-                    </option>
-                  ))}
-                </select>
+              {/* Filter Jobdesk */}
+              <select
+                aria-label="Filter berdasarkan jobdesk"
+                value={filterJobdesk}
+                onChange={(e) => setFilterJobdesk(e.target.value)}
+                className="h-8 px-2.5 text-[11px] rounded-lg border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-white/5 text-slate-700 dark:text-gray-200 font-medium focus:outline-none"
+              >
+                <option value="all">Semua Jobdesk</option>
+                {jobdesks.map((jd) => (
+                  <option key={jd.id} value={jd.code}>
+                    {jd.code} - {jd.name || jd.code}
+                  </option>
+                ))}
+                <option value="UNASSIGNED">Tanpa Jobdesk</option>
+              </select>
 
-                {/* Filter Jobdesk */}
-                <select
-                  aria-label="Filter berdasarkan jobdesk"
-                  value={filterJobdesk}
-                  onChange={(e) => setFilterJobdesk(e.target.value)}
-                  className="px-3 py-1.5 text-xs rounded-xl border border-slate-200/80 dark:border-white/10 bg-slate-50 dark:bg-white/5 text-[#0F172A] dark:text-white font-semibold shadow-2xs"
-                >
-                  <option value="all">Semua Jobdesk</option>
-                  {jobdesks.map((jd) => (
-                    <option key={jd.id} value={jd.code}>
-                      {jd.code} - {jd.name || jd.code}
-                    </option>
-                  ))}
-                  <option value="UNASSIGNED">Tanpa Jobdesk</option>
-                </select>
-
-                {/* Filter Status Kerja / Libur */}
-                <select
-                  aria-label="Filter status dinas"
-                  value={filterDutyStatus}
-                  onChange={(e) => setFilterDutyStatus(e.target.value as any)}
-                  className="px-3 py-1.5 text-xs rounded-xl border border-slate-200/80 dark:border-white/10 bg-slate-50 dark:bg-white/5 text-[#0F172A] dark:text-white font-semibold shadow-2xs"
-                >
-                  <option value="all">Semua Status</option>
-                  <option value="working">On Duty (Kerja)</option>
-                  <option value="off">Off Day (Libur / Cuti)</option>
-                </select>
-              </div>
+              {/* Filter Status Kerja / Libur */}
+              <select
+                aria-label="Filter status dinas"
+                value={filterDutyStatus}
+                onChange={(e) => setFilterDutyStatus(e.target.value as any)}
+                className="h-8 px-2.5 text-[11px] rounded-lg border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-white/5 text-slate-700 dark:text-gray-200 font-medium focus:outline-none"
+              >
+                <option value="all">Semua Status</option>
+                <option value="working">On Duty (Kerja)</option>
+                <option value="off">Off Day (Libur / Cuti)</option>
+              </select>
             </div>
 
             {/* Table */}

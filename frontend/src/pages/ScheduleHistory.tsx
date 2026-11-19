@@ -140,9 +140,9 @@ export const ScheduleHistory: React.FC = () => {
               setConfirmText('');
               setIsDeleteModalOpen(true);
             }}
-            className="px-3.5 py-2 rounded-xl bg-rose-50 dark:bg-rose-950/30 hover:bg-rose-100 dark:hover:bg-rose-900/40 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800/40 text-xs font-bold flex items-center gap-1.5 transition-colors"
+            className="px-3.5 py-2 rounded-xl bg-white dark:bg-white/5 hover:bg-slate-50 dark:hover:bg-white/10 text-slate-700 dark:text-gray-200 border border-slate-300 dark:border-white/15 text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer shadow-2xs"
           >
-            <Trash2 className="w-3.5 h-3.5 text-rose-600 dark:text-rose-400" />
+            <Trash2 className="w-3.5 h-3.5 text-slate-500 dark:text-gray-400" />
             <span>Hapus Permanen Histori</span>
           </button>
         )}

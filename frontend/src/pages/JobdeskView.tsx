@@ -437,9 +437,9 @@ export const JobdeskView: React.FC = () => {
             <button
               type="button"
               onClick={() => handleOpenAddJobdesk()}
-              className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold flex items-center gap-1.5 transition-colors shadow-xs"
+              className="px-4 py-2 rounded-xl bg-[#F9C900] hover:bg-[#E5B800] text-[#111111] border border-[#E5B800] text-xs font-bold flex items-center gap-1.5 transition-colors shadow-sm cursor-pointer"
             >
-              <Plus className="w-3.5 h-3.5" aria-hidden="true" />
+              <Plus className="w-3.5 h-3.5 text-[#111111]" aria-hidden="true" />
               <span>Add Jobdesk</span>
             </button>
           )}
@@ -447,9 +447,9 @@ export const JobdeskView: React.FC = () => {
             <button
               type="button"
               onClick={handleExport}
-              className="px-3.5 py-2 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-[#18181A] hover:bg-slate-50 dark:hover:bg-white/5 text-xs font-bold text-[#0F172A] dark:text-white flex items-center gap-1.5 transition-colors shadow-2xs"
+              className="px-3.5 py-2 rounded-xl border border-slate-300 dark:border-white/20 bg-transparent hover:bg-slate-50 dark:hover:bg-white/5 text-xs font-bold text-slate-700 dark:text-gray-200 flex items-center gap-1.5 transition-colors shadow-2xs cursor-pointer"
             >
-              <Download className="w-3.5 h-3.5 text-slate-500" aria-hidden="true" />
+              <Download className="w-3.5 h-3.5 text-slate-500 dark:text-gray-400" aria-hidden="true" />
               <span>Export CSV</span>
             </button>
           )}

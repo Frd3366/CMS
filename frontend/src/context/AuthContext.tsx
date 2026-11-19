@@ -689,7 +689,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         teamId: 'team_core',
         teamName: 'Team Core Network Ops',
         defaultLocation: 'Badung',
-        defaultJobdesk: 'CT1',
+        defaultJobdesk: undefined,
         status: 'active',
         role: role,
         joinDate: new Date().toISOString().split('T')[0],

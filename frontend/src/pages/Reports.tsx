@@ -143,13 +143,13 @@ export const Reports: React.FC = () => {
             <button
               type="button"
               onClick={() => setIsGSheetsModalOpen(true)}
-              className="px-3.5 py-1.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/30 hover:bg-emerald-100 dark:hover:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800/60 text-xs font-bold flex items-center gap-2 shadow-2xs transition-colors cursor-pointer"
+              className="px-3.5 py-1.5 rounded-xl bg-white dark:bg-white/5 hover:bg-slate-50 dark:hover:bg-white/10 text-slate-700 dark:text-gray-200 border border-slate-300 dark:border-white/15 text-xs font-bold flex items-center gap-2 shadow-2xs transition-colors cursor-pointer"
             >
-              <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+              <FileSpreadsheet className="w-3.5 h-3.5 text-slate-500 dark:text-gray-400" />
               <span>Auto Backup Google Sheets</span>
               {gsheetsConfig.enabled && (
                 <span
-                  className="w-2 h-2 rounded-full bg-emerald-500 ring-2 ring-white dark:ring-[#18181A]"
+                  className="w-2 h-2 rounded-full bg-slate-400 dark:bg-white/60 ring-2 ring-white dark:ring-[#18181A]"
                   title="Auto Backup 1 Jam Aktif"
                 />
               )}
@@ -159,9 +159,9 @@ export const Reports: React.FC = () => {
           <button
             type="button"
             onClick={handlePrint}
-            className="px-3.5 py-1.5 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-[#18181A] hover:bg-slate-50 dark:hover:bg-white/5 text-slate-700 dark:text-gray-200 text-xs font-semibold flex items-center gap-1.5 shadow-2xs transition-colors"
+            className="px-3.5 py-1.5 rounded-xl border border-slate-300 dark:border-white/20 bg-transparent hover:bg-slate-50 dark:hover:bg-white/5 text-slate-700 dark:text-gray-200 text-xs font-semibold flex items-center gap-1.5 shadow-2xs transition-colors"
           >
-            <Printer className="w-3.5 h-3.5 text-slate-400" />
+            <Printer className="w-3.5 h-3.5 text-slate-500 dark:text-gray-400" />
             <span>Cetak / PDF</span>
           </button>
 

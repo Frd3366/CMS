@@ -192,7 +192,7 @@ export const JobdeskMaster: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => handleOpenEdit(jd)}
-                  className="px-3 py-1 rounded-lg border border-slate-300 dark:border-white/15 bg-white dark:bg-white/10 hover:bg-slate-50 dark:hover:bg-white/20 text-slate-800 dark:text-white font-semibold flex items-center gap-1 shadow-2xs transition-colors"
+                  className="px-3 py-1 rounded-lg border border-slate-300 dark:border-white/20 bg-transparent hover:bg-slate-50 dark:hover:bg-white/10 text-slate-800 dark:text-white font-semibold flex items-center gap-1 shadow-2xs transition-colors"
                 >
                   <Edit2 className="w-3 h-3 text-slate-400 dark:text-slate-300" />
                   <span>Edit</span>
@@ -200,7 +200,7 @@ export const JobdeskMaster: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => setDeleteTarget(jd)}
-                  className="p-1 rounded-lg border border-rose-200 dark:border-rose-900/40 text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/30 transition-colors shadow-2xs"
+                  className="p-1 rounded-lg border border-slate-300 dark:border-white/20 text-slate-600 dark:text-gray-300 hover:bg-slate-50 dark:hover:bg-white/10 transition-colors shadow-2xs"
                   title={`Hapus kode jobdesk ${jd.code}`}
                 >
                   <Trash2 className="w-3.5 h-3.5" />
