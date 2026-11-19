@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
@@ -12,12 +12,14 @@ import {
   Search,
   Calendar,
   X,
-  ArrowRight
+  ArrowRight,
+  Briefcase,
+  CheckCircle2
 } from 'lucide-react';
 import { getShiftBadgeStyle, getJobdeskBadgeStyle, getContrastTextColor } from '../utils/codeStyles';
 
 export const Dashboard: React.FC = () => {
-  const { employees, schedules, shifts, jobdesks, currentUser } = useAuth();
+  const { employees, schedules, shifts, jobdesks, leaves, currentUser } = useAuth();
   const navigate = useNavigate();
 
   const getTodayIso = () => {
@@ -32,7 +34,8 @@ export const Dashboard: React.FC = () => {
   const [locationFilter, setLocationFilter] = useState<'All' | 'Badung' | 'Denpasar'>('All');
   const [searchQuery, setSearchQuery] = useState('');
   const [filterShift, setFilterShift] = useState<string>('all');
-  const [filterJobdesk] = useState<string>('all');
+  const [filterJobdesk, setFilterJobdesk] = useState<string>('all');
+  const [filterDutyStatus, setFilterDutyStatus] = useState<'all' | 'working' | 'off'>('all');
 
   const [activeModalTitle, setActiveModalTitle] = useState<string | null>(null);
   const [modalAssignments, setModalAssignments] = useState<any[]>([]);
@@ -46,6 +49,43 @@ export const Dashboard: React.FC = () => {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [activeModalTitle]);
 
+  // Fast employee lookup map
+  const empMap = useMemo(() => {
+    const m = new Map<string, typeof employees[0]>();
+    employees.forEach((e) => {
+      m.set(e.id, e);
+      m.set(e.employeeNo, e);
+      if (e.name) m.set(e.name.toLowerCase(), e);
+    });
+    return m;
+  }, [employees]);
+
+  // Helper to determine if a shift code counts as Off/Libur/Cuti
+  const isOffShift = useCallback(
+    (shiftCode: string): boolean => {
+      if (!shiftCode) return true;
+      const clean = shiftCode.trim().toUpperCase();
+      if (['OFF', 'LIBUR', 'CUTI', 'LEAVE', 'REST', 'L', 'DAY OFF'].includes(clean)) return true;
+      if (clean.includes('OFF') || clean.includes('LIBUR') || clean.includes('CUTI') || clean.includes('LEAVE')) {
+        return true;
+      }
+      const match = shifts.find((sh) => sh.code.trim().toUpperCase() === clean);
+      if (match && match.isOff) return true;
+      return false;
+    },
+    [shifts]
+  );
+
+  // Approved Leaves for selected date
+  const approvedLeavesToday = useMemo(() => {
+    if (!leaves || !Array.isArray(leaves)) return [];
+    return leaves.filter((l) => {
+      if (l.status !== 'Approved') return false;
+      return l.startDate <= selectedDate && l.endDate >= selectedDate;
+    });
+  }, [leaves, selectedDate]);
+
+  // Day assignments from schedules for selected date & location
   const dayAssignments = useMemo(() => {
     return schedules.filter((s) => {
       if (s.date !== selectedDate) return false;
@@ -59,22 +99,62 @@ export const Dashboard: React.FC = () => {
     });
   }, [schedules, selectedDate, locationFilter, currentUser]);
 
+  // Comprehensive KPIs
   const kpis = useMemo(() => {
-    const totalKaryawan = employees.length;
-    const activeEmployees = employees.filter((e) => e.status === 'active').length;
-    const workingToday = dayAssignments.filter((s) => s.shiftCode !== 'OFF').length;
-    const offDay = dayAssignments.filter((s) => s.shiftCode === 'OFF').length;
-    const badungShift = dayAssignments.filter((s) => s.location === 'Badung' && s.shiftCode !== 'OFF').length;
-    const denpasarShift = dayAssignments.filter((s) => s.location === 'Denpasar' && s.shiftCode !== 'OFF').length;
+    const relevantEmployees =
+      locationFilter === 'All'
+        ? employees
+        : employees.filter((e) => e.defaultLocation === locationFilter);
 
-    return { totalKaryawan, activeEmployees, workingToday, offDay, badungShift, denpasarShift };
-  }, [employees, dayAssignments]);
+    const totalKaryawan = relevantEmployees.length;
+    const activeEmployees = relevantEmployees.filter((e) => e.status === 'active').length;
 
+    // Working assignments (actively on duty, not an off/libur shift)
+    const workingAssignments = dayAssignments.filter((s) => !isOffShift(s.shiftCode));
+    const workingToday = workingAssignments.length;
+
+    // Off Day assignments (shift is off/libur/cuti)
+    const offAssignments = dayAssignments.filter((s) => isOffShift(s.shiftCode));
+
+    // Approved leaves today
+    const offEmpIds = new Set(offAssignments.map((s) => s.employeeId || s.employeeCode));
+    const additionalLeaves = approvedLeavesToday.filter(
+      (l) => !offEmpIds.has(l.employeeId)
+    );
+    const offDay = offAssignments.length + additionalLeaves.length;
+
+    // Hub specific working staff
+    const badungShift = workingAssignments.filter(
+      (s) => s.location === 'Badung' || (!s.location && empMap.get(s.employeeId)?.defaultLocation === 'Badung')
+    ).length;
+
+    const denpasarShift = workingAssignments.filter(
+      (s) => s.location === 'Denpasar' || (!s.location && empMap.get(s.employeeId)?.defaultLocation === 'Denpasar')
+    ).length;
+
+    return {
+      totalKaryawan,
+      activeEmployees,
+      workingToday,
+      offDay,
+      badungShift,
+      denpasarShift,
+      workingAssignments,
+      offAssignments,
+      additionalLeaves
+    };
+  }, [employees, dayAssignments, isOffShift, approvedLeavesToday, locationFilter, empMap]);
+
+  // Kanban Columns - Active Jobdesk Master with Working Personnel Only
   const kanbanColumns = useMemo(() => {
+    // Only working personnel are allocated to active jobdesks (off day staff do not work jobdesks)
+    const workingStaff = dayAssignments.filter((s) => !isOffShift(s.shiftCode));
+
     const activeMasterJobdesks = jobdesks.filter((j) => j.status === 'active' || !j.status);
     const targetJobdesks = activeMasterJobdesks.length > 0 ? activeMasterJobdesks : jobdesks;
-    return targetJobdesks.map((jd) => {
-      const items = dayAssignments.filter((s) => s.jobdeskCode === jd.code);
+
+    const cols = targetJobdesks.map((jd) => {
+      const items = workingStaff.filter((s) => s.jobdeskCode === jd.code);
       return {
         code: jd.code,
         name: jd.name || jd.code,
@@ -84,39 +164,96 @@ export const Dashboard: React.FC = () => {
         items
       };
     });
-  }, [dayAssignments, jobdesks]);
 
+    // Check if there are on-duty personnel without a designated master jobdesk code
+    const masterCodes = new Set(targetJobdesks.map((j) => j.code));
+    const unallocated = workingStaff.filter((s) => !s.jobdeskCode || !masterCodes.has(s.jobdeskCode));
+    if (unallocated.length > 0) {
+      cols.push({
+        code: 'UNASSIGNED',
+        name: 'General / Floating Support',
+        description: 'Personel dinas tanpa alokasi jobdesk khusus',
+        color: '#64748B',
+        textColor: '#FFFFFF',
+        items: unallocated
+      });
+    }
+
+    return cols;
+  }, [dayAssignments, jobdesks, isOffShift]);
+
+  // Shift Distribution Groups
   const shiftGroups = useMemo(() => {
-    return shifts.map((sh) => {
-      const items = dayAssignments.filter((s) => s.shiftCode === sh.code);
-      return {
-        ...sh,
-        count: items.length,
-        items
-      };
-    });
-  }, [shifts, dayAssignments]);
+    const map = new Map<string, { shift: any; count: number; items: any[]; isOff: boolean }>();
 
+    // 1. Populate from master shifts
+    shifts.forEach((sh) => {
+      const items = dayAssignments.filter((s) => s.shiftCode === sh.code);
+      map.set(sh.code, {
+        shift: sh,
+        count: items.length,
+        items,
+        isOff: Boolean(sh.isOff || isOffShift(sh.code))
+      });
+    });
+
+    // 2. Catch any active shift codes present in day assignments not in master
+    dayAssignments.forEach((s) => {
+      if (!map.has(s.shiftCode)) {
+        const off = isOffShift(s.shiftCode);
+        map.set(s.shiftCode, {
+          shift: {
+            id: `sh_${s.shiftCode}`,
+            code: s.shiftCode,
+            name: s.shiftCode,
+            startTime: off ? '-' : '08:00',
+            endTime: off ? '-' : '16:00',
+            endDayOffset: 0,
+            color: off ? '#E11D48' : '#0284C7',
+            isOff: off
+          },
+          count: 0,
+          items: [],
+          isOff: off
+        });
+      }
+      const existing = map.get(s.shiftCode);
+      if (existing && !existing.items.some((it) => it.id === s.id)) {
+        existing.items.push(s);
+        existing.count = existing.items.length;
+      }
+    });
+
+    return Array.from(map.values());
+  }, [shifts, dayAssignments, isOffShift]);
+
+  // Filtered Roster Directory Table
   const filteredRoster = useMemo(() => {
     return dayAssignments.filter((item) => {
       if (filterShift !== 'all' && item.shiftCode !== filterShift) return false;
-      if (filterJobdesk !== 'all' && item.jobdeskCode !== filterJobdesk) return false;
+      if (filterJobdesk !== 'all' && (item.jobdeskCode || 'UNASSIGNED') !== filterJobdesk) return false;
+
+      if (filterDutyStatus === 'working' && isOffShift(item.shiftCode)) return false;
+      if (filterDutyStatus === 'off' && !isOffShift(item.shiftCode)) return false;
 
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase();
         const matchName = item.employeeName.toLowerCase().includes(q);
         const matchCode = item.employeeCode.toLowerCase().includes(q);
         const matchLoc = (item.location || '').toLowerCase().includes(q);
-        if (!matchName && !matchCode && !matchLoc) return false;
+        const matchJd = (item.jobdeskCode || '').toLowerCase().includes(q);
+        const matchShift = item.shiftCode.toLowerCase().includes(q);
+        if (!matchName && !matchCode && !matchLoc && !matchJd && !matchShift) return false;
       }
       return true;
     });
-  }, [dayAssignments, filterShift, filterJobdesk, searchQuery]);
+  }, [dayAssignments, filterShift, filterJobdesk, filterDutyStatus, searchQuery, isOffShift]);
 
   const getShiftHours = (shiftCode: string) => {
+    if (isOffShift(shiftCode)) return 'OFF (Rest / Libur)';
     const sh = shifts.find((s) => s.code === shiftCode);
     if (!sh) return '-';
-    if (sh.isOff) return 'OFF (Rest)';
+    if (sh.isOff) return 'OFF (Rest / Libur)';
     return `${sh.startTime} - ${sh.endTime}${sh.endDayOffset > 0 ? ' (+1)' : ''}`;
   };
 
@@ -127,13 +264,14 @@ export const Dashboard: React.FC = () => {
 
   return (
     <div className="space-y-6">
+      {/* Top Header Card */}
       <div className="bg-white dark:bg-[#18181A] p-5 sm:p-6 rounded-2xl border border-slate-200/80 dark:border-white/10 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h1 className="text-xl sm:text-2xl font-black text-[#0F172A] dark:text-[#F2F4F7] tracking-tight">
-            Dashboard
+            Dashboard Operasional
           </h1>
           <p className="text-xs text-slate-600 dark:text-gray-300 mt-1">
-            Realtime operational monitoring, Jobdesk Allocation, and Personnel Attendance.
+            Monitoring realtime alokasi jobdesk, kehadiran shift, dan status operasional personel.
           </p>
         </div>
 
@@ -146,11 +284,15 @@ export const Dashboard: React.FC = () => {
               aria-label="Pilih Tanggal Operasional"
               value={selectedDate}
               onChange={(e) => setSelectedDate(e.target.value)}
-              className="bg-transparent font-bold text-xs text-[#0F172A] dark:text-white"
+              className="bg-transparent font-bold text-xs text-[#0F172A] dark:text-white border-0 outline-none focus:ring-0"
             />
           </label>
 
-          <div className="flex items-center p-1 rounded-xl border border-slate-200/80 dark:border-white/10 bg-slate-100/80 dark:bg-white/5 text-xs" role="group" aria-label="Filter Lokasi Hub">
+          <div
+            className="flex items-center p-1 rounded-xl border border-slate-200/80 dark:border-white/10 bg-slate-100/80 dark:bg-white/5 text-xs"
+            role="group"
+            aria-label="Filter Lokasi Hub"
+          >
             {(['All', 'Badung', 'Denpasar'] as const).map((loc) => {
               const label = loc === 'All' ? 'All Hubs' : loc;
               const isActive = locationFilter === loc;
@@ -174,26 +316,35 @@ export const Dashboard: React.FC = () => {
         </div>
       </div>
 
+      {/* KPI Cards Row (5 Cards) */}
       <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
+        {/* 1. Total Personnel */}
         <button
           type="button"
           onClick={() =>
             openKpiDetail(
-              'Master Employees',
-              employees.map((e) => ({
-                employeeName: e.name,
-                employeeCode: e.employeeNo,
-                shiftCode: e.level,
-                jobdeskCode: undefined,
-                location: e.defaultLocation,
-                publicationStatus: e.status === 'active' ? 'Active' : 'Inactive'
-              }))
+              'Master Karyawan Terdaftar',
+              employees.map((e) => {
+                const todaySched = dayAssignments.find(
+                  (s) => s.employeeId === e.id || s.employeeCode === e.employeeNo
+                );
+                return {
+                  employeeName: e.name,
+                  employeeCode: e.employeeNo,
+                  shiftCode: todaySched ? todaySched.shiftCode : (e.status === 'active' ? 'Belum Ada Jadwal' : 'Non-Aktif'),
+                  jobdeskCode: todaySched?.jobdeskCode || e.defaultJobdesk,
+                  location: todaySched?.location || e.defaultLocation,
+                  publicationStatus: todaySched ? todaySched.publicationStatus : (e.status === 'active' ? 'Aktif' : 'Nonaktif'),
+                  role: e.role || e.level,
+                  teamName: e.teamName
+                };
+              })
             )
           }
           className="text-left bg-white dark:bg-[#18181A] p-5 rounded-2xl border border-slate-200/80 dark:border-white/10 hover:border-indigo-400 dark:hover:border-indigo-500/60 shadow-xs transition-all flex flex-col justify-between min-h-[148px]"
         >
           <div className="flex items-center justify-between w-full">
-            <span className="text-xs font-semibold text-slate-600 dark:text-gray-300">Total Personnel</span>
+            <span className="text-xs font-semibold text-slate-600 dark:text-gray-300">Total Personel</span>
             <div className="w-9 h-9 rounded-xl bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800/40 flex items-center justify-center">
               <Users className="w-4 h-4" aria-hidden="true" />
             </div>
@@ -206,17 +357,18 @@ export const Dashboard: React.FC = () => {
               <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800/50">
                 {kpis.activeEmployees} Aktif
               </span>
-              <span className="text-[11px] text-slate-600 dark:text-gray-300">Registered staff</span>
+              <span className="text-[11px] text-slate-600 dark:text-gray-300">Database staf</span>
             </div>
           </div>
         </button>
 
+        {/* 2. Working Personnel */}
         <button
           type="button"
           onClick={() =>
             openKpiDetail(
-              `Working Personnel (${selectedDate})`,
-              dayAssignments.filter((s) => s.shiftCode !== 'OFF')
+              `Personel Bertugas (${selectedDate})`,
+              kpis.workingAssignments
             )
           }
           className="text-left bg-white dark:bg-[#18181A] p-5 rounded-2xl border border-slate-200/80 dark:border-white/10 hover:border-emerald-400 dark:hover:border-emerald-500/60 shadow-xs transition-all flex flex-col justify-between min-h-[148px]"
@@ -237,20 +389,29 @@ export const Dashboard: React.FC = () => {
                 On Duty
               </span>
               <span className="text-[11px] text-slate-600 dark:text-gray-300">
-                {kpis.workingToday > 0 ? 'Active roster' : 'Not active'}
+                {kpis.workingToday > 0 ? 'Shift aktif' : 'Belum ada dinas'}
               </span>
             </div>
           </div>
         </button>
 
+        {/* 3. Off Day (Rest / Libur / Cuti) */}
         <button
           type="button"
-          onClick={() =>
-            openKpiDetail(
-              `Employees on Off Day (${selectedDate})`,
-              dayAssignments.filter((s) => s.shiftCode === 'OFF')
-            )
-          }
+          onClick={() => {
+            const list = [
+              ...kpis.offAssignments,
+              ...kpis.additionalLeaves.map((l) => ({
+                employeeName: l.employeeName,
+                employeeCode: empMap.get(l.employeeId)?.employeeNo || l.employeeId,
+                shiftCode: l.type || 'CUTI',
+                jobdeskCode: undefined,
+                location: empMap.get(l.employeeId)?.defaultLocation || 'Hub',
+                publicationStatus: 'Approved Leave'
+              }))
+            ];
+            openKpiDetail(`Personel Libur & Cuti (${selectedDate})`, list);
+          }}
           className="text-left bg-white dark:bg-[#18181A] p-5 rounded-2xl border border-slate-200/80 dark:border-white/10 hover:border-rose-400 dark:hover:border-rose-500/60 shadow-xs transition-all flex flex-col justify-between min-h-[148px]"
         >
           <div className="flex items-center justify-between w-full">
@@ -266,19 +427,22 @@ export const Dashboard: React.FC = () => {
             <div className="flex items-center gap-1.5 mt-2">
               <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-50 dark:bg-rose-950/40 text-rose-800 dark:text-rose-300 border border-rose-200 dark:border-rose-800/50">
                 <span className="w-1.5 h-1.5 rounded-full bg-rose-600" />
-                Rest Code
+                Libur / Cuti
               </span>
-              <span className="text-[11px] text-slate-600 dark:text-gray-300">Scheduled off</span>
+              <span className="text-[11px] text-slate-600 dark:text-gray-300">Shift Rest & Cuti</span>
             </div>
           </div>
         </button>
 
+        {/* 4. Badung Hub */}
         <button
           type="button"
           onClick={() =>
             openKpiDetail(
-              `Badung Hub Roster (${selectedDate})`,
-              dayAssignments.filter((s) => s.location === 'Badung' && s.shiftCode !== 'OFF')
+              `Roster Dinas Hub Badung (${selectedDate})`,
+              kpis.workingAssignments.filter(
+                (s) => s.location === 'Badung' || (!s.location && empMap.get(s.employeeId)?.defaultLocation === 'Badung')
+              )
             )
           }
           className="text-left bg-white dark:bg-[#18181A] p-5 rounded-2xl border border-slate-200/80 dark:border-white/10 hover:border-amber-400 dark:hover:border-amber-500/60 shadow-xs transition-all flex flex-col justify-between min-h-[148px]"
@@ -299,18 +463,21 @@ export const Dashboard: React.FC = () => {
                 Kerobokan
               </span>
               <span className="text-[11px] text-slate-600 dark:text-gray-300">
-                {kpis.badungShift > 0 ? 'Active duty' : 'Not active'}
+                {kpis.badungShift > 0 ? 'Personel aktif' : 'Nol dinas'}
               </span>
             </div>
           </div>
         </button>
 
+        {/* 5. Denpasar Hub */}
         <button
           type="button"
           onClick={() =>
             openKpiDetail(
-              `Denpasar Hub Roster (${selectedDate})`,
-              dayAssignments.filter((s) => s.location === 'Denpasar' && s.shiftCode !== 'OFF')
+              `Roster Dinas Hub Denpasar (${selectedDate})`,
+              kpis.workingAssignments.filter(
+                (s) => s.location === 'Denpasar' || (!s.location && empMap.get(s.employeeId)?.defaultLocation === 'Denpasar')
+              )
             )
           }
           className="text-left bg-white dark:bg-[#18181A] p-5 rounded-2xl border border-slate-200/80 dark:border-white/10 hover:border-sky-400 dark:hover:border-sky-500/60 shadow-xs transition-all flex flex-col justify-between min-h-[148px]"
@@ -331,90 +498,119 @@ export const Dashboard: React.FC = () => {
                 Gatsu Timur
               </span>
               <span className="text-[11px] text-slate-600 dark:text-gray-300">
-                {kpis.denpasarShift > 0 ? 'Active duty' : 'Not active'}
+                {kpis.denpasarShift > 0 ? 'Personel aktif' : 'Nol dinas'}
               </span>
             </div>
           </div>
         </button>
       </div>
 
+      {/* Main Content: Left (Jobdesk Kanban + Roster Directory) & Right (Shift Distribution) */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         <div className="lg:col-span-8 space-y-6">
+          {/* Section: Jobdesk Allocation Today */}
           <div className="bg-white dark:bg-[#18181A] p-6 rounded-2xl border border-slate-200/80 dark:border-white/10 shadow-xs space-y-5">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div>
                 <h2 className="text-sm font-black text-[#0F172A] dark:text-white tracking-tight flex items-center gap-2">
                   <Layers className="w-4 h-4 text-indigo-600 dark:text-indigo-400" aria-hidden="true" />
                   <span>Jobdesk Allocation Today</span>
                 </h2>
                 <p className="text-xs text-slate-600 dark:text-gray-300 mt-1">
-                  Daily personnel assignment across CT1 (Dispatch), CT2 (Surveillance), CT4 (Field)
+                  Alokasi tugas personel dinas aktif per katalog master jobdesk ({kanbanColumns.reduce((acc, col) => acc + col.items.length, 0)} personel bertugas).
                 </p>
               </div>
               <button
                 type="button"
                 onClick={() => navigate('/jobdesk')}
-                className="text-xs font-bold text-indigo-700 dark:text-indigo-400 hover:underline flex items-center gap-1.5"
+                className="text-xs font-bold text-indigo-700 dark:text-indigo-400 hover:underline flex items-center gap-1.5 self-start sm:self-auto"
               >
                 <span>Buka Matriks Jobdesk</span>
                 <ArrowRight className="w-3.5 h-3.5" aria-hidden="true" />
               </button>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            {/* Dynamic Grid: Auto fits number of jobdesk columns */}
+            <div className={`grid grid-cols-1 sm:grid-cols-2 ${kanbanColumns.length >= 3 ? 'lg:grid-cols-3' : 'lg:grid-cols-2'} gap-4`}>
               {kanbanColumns.map((col) => (
                 <div
                   key={col.code}
-                  className="bg-white dark:bg-[#18181A] rounded-xl border border-slate-200/80 dark:border-white/10 overflow-hidden flex flex-col"
+                  className="bg-white dark:bg-[#18181A] rounded-xl border border-slate-200/80 dark:border-white/10 overflow-hidden flex flex-col shadow-xs"
                 >
-                  <div className="px-4 py-3 border-b border-slate-100 dark:border-white/10 bg-white dark:bg-[#18181A]">
-                    <span
-                      style={{
-                        backgroundColor: col.color,
-                        color: col.textColor || getContrastTextColor(col.color)
-                      }}
-                      className="text-xs font-black font-mono px-3 py-1 rounded-md shadow-2xs inline-block"
-                    >
-                      {col.code}
+                  {/* Column Header with Code, Full Name, and Count Badge */}
+                  <div className="px-4 py-3.5 border-b border-slate-100 dark:border-white/10 bg-white dark:bg-[#18181A] flex items-center justify-between gap-2">
+                    <div className="space-y-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span
+                          style={{
+                            backgroundColor: col.color,
+                            color: col.textColor || getContrastTextColor(col.color)
+                          }}
+                          className="text-xs font-black font-mono px-2.5 py-0.5 rounded-md shadow-2xs inline-block"
+                        >
+                          {col.code}
+                        </span>
+                        <h3 className="text-xs font-extrabold text-[#0F172A] dark:text-white truncate">
+                          {col.name}
+                        </h3>
+                      </div>
+                      {col.description && (
+                        <p className="text-[11px] text-slate-500 dark:text-gray-400 line-clamp-1 leading-snug">
+                          {col.description}
+                        </p>
+                      )}
+                    </div>
+                    <span className="shrink-0 text-[10px] font-mono font-bold px-2 py-0.5 rounded-full bg-slate-100 dark:bg-white/10 text-slate-700 dark:text-gray-300">
+                      {col.items.length} Staff
                     </span>
                   </div>
 
+                  {/* Column Items */}
                   <div className="p-3.5 space-y-2.5 flex-1 min-h-[160px] bg-slate-50/50 dark:bg-white/[0.02]">
                     {col.items.length === 0 ? (
                       <div className="h-full flex items-center justify-center text-center p-6 text-xs text-slate-500 dark:text-gray-400 italic">
                         Tidak ada personel bertugas di {col.code} pada tanggal ini.
                       </div>
                     ) : (
-                      col.items.map((item) => (
-                        <button
-                          key={item.id}
-                          type="button"
-                          onClick={() => openKpiDetail(`Assignment Detail: ${item.employeeName}`, [item])}
-                          className={`w-full text-left p-3 rounded-xl border-0 hover:opacity-95 space-y-2 transition-all ${
-                            getJobdeskBadgeStyle(col.code).card
-                          }`}
-                        >
-                          <div className="flex items-center justify-between">
-                            <span className="text-xs font-extrabold text-current truncate">
-                              {item.employeeName}
-                            </span>
-                            <span className="text-[10px] font-mono text-current opacity-80">
-                              {item.employeeCode}
-                            </span>
-                          </div>
+                      col.items.map((item) => {
+                        const emp = empMap.get(item.employeeId) || empMap.get(item.employeeCode);
+                        return (
+                          <button
+                            key={item.id}
+                            type="button"
+                            onClick={() => openKpiDetail(`Assignment Detail: ${item.employeeName}`, [item])}
+                            className={`w-full text-left p-3 rounded-xl border-0 hover:opacity-95 space-y-2 transition-all ${
+                              getJobdeskBadgeStyle(col.code).card
+                            }`}
+                          >
+                            <div className="flex items-center justify-between">
+                              <span className="text-xs font-extrabold text-current truncate">
+                                {item.employeeName}
+                              </span>
+                              <span className="text-[10px] font-mono text-current opacity-80">
+                                {item.employeeCode}
+                              </span>
+                            </div>
 
-                          <div className="flex items-center justify-between text-[11px] pt-1.5 border-t border-current/15">
-                            <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold font-mono ${getShiftBadgeStyle(item.shiftCode).badge}`}>
-                              {item.shiftCode}
-                            </span>
+                            {emp && (
+                              <div className="text-[10px] text-current opacity-85 truncate">
+                                {emp.role || emp.level || 'CTSO Staff'} &bull; {emp.teamName || 'Ops'}
+                              </div>
+                            )}
 
-                            <span className="flex items-center gap-1 text-current opacity-85 text-[10px] font-medium font-mono">
-                              <MapPin className="w-3 h-3 text-current opacity-75" aria-hidden="true" />
-                              {item.location || '-'}
-                            </span>
-                          </div>
-                        </button>
-                      ))
+                            <div className="flex items-center justify-between text-[11px] pt-1.5 border-t border-current/15">
+                              <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold font-mono ${getShiftBadgeStyle(item.shiftCode).badge}`}>
+                                {item.shiftCode}
+                              </span>
+
+                              <span className="flex items-center gap-1 text-current opacity-85 text-[10px] font-medium font-mono">
+                                <MapPin className="w-3 h-3 text-current opacity-75" aria-hidden="true" />
+                                {item.location || '-'}
+                              </span>
+                            </div>
+                          </button>
+                        );
+                      })
                     )}
                   </div>
                 </div>
@@ -422,6 +618,7 @@ export const Dashboard: React.FC = () => {
             </div>
           </div>
 
+          {/* Section: Personnel Roster Directory */}
           <div className="bg-white dark:bg-[#18181A] p-6 rounded-2xl border border-slate-200/80 dark:border-white/10 shadow-xs space-y-5">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3.5">
               <div>
@@ -430,110 +627,160 @@ export const Dashboard: React.FC = () => {
                   <span>Personnel Roster Directory</span>
                 </h2>
                 <p className="text-xs text-slate-600 dark:text-gray-300 mt-1">
-                  Full list of scheduled personnel for {selectedDate} ({filteredRoster.length} records)
+                  Daftar personel terjadwal untuk {selectedDate} ({filteredRoster.length} record)
                 </p>
               </div>
 
-              <div className="flex items-center gap-2.5 flex-wrap">
+              {/* Filters Bar: Search, Shift, Jobdesk, Duty Status */}
+              <div className="flex items-center gap-2 flex-wrap">
                 <div className="relative flex items-center">
                   <Search className="w-3.5 h-3.5 text-slate-500 absolute left-3 pointer-events-none z-10" aria-hidden="true" />
                   <input
                     type="text"
                     aria-label="Cari nama atau ID personel"
-                    placeholder="Search name, ID..."
+                    placeholder="Cari nama, ID..."
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
-                    className="pl-9 pr-3.5 py-2 text-xs rounded-xl border border-slate-200/80 dark:border-white/10 bg-slate-50 dark:bg-white/5 text-[#0F172A] dark:text-white placeholder-slate-500 shadow-2xs"
+                    className="pl-9 pr-3.5 py-1.5 text-xs rounded-xl border border-slate-200/80 dark:border-white/10 bg-slate-50 dark:bg-white/5 text-[#0F172A] dark:text-white placeholder-slate-500 shadow-2xs focus:ring-1 focus:ring-indigo-500"
                   />
                 </div>
 
+                {/* Filter Shift */}
                 <select
                   aria-label="Filter berdasarkan shift"
                   value={filterShift}
                   onChange={(e) => setFilterShift(e.target.value)}
-                  className="px-3.5 py-2 text-xs rounded-xl border border-slate-200/80 dark:border-white/10 bg-slate-50 dark:bg-white/5 text-[#0F172A] dark:text-white font-semibold shadow-2xs"
+                  className="px-3 py-1.5 text-xs rounded-xl border border-slate-200/80 dark:border-white/10 bg-slate-50 dark:bg-white/5 text-[#0F172A] dark:text-white font-semibold shadow-2xs"
                 >
-                  <option value="all">All Shifts</option>
+                  <option value="all">Semua Shift</option>
                   {shifts.map((sh) => (
                     <option key={sh.id} value={sh.code}>
-                      {sh.code}
+                      {sh.code} {sh.isOff ? '(Libur)' : ''}
                     </option>
                   ))}
+                </select>
+
+                {/* Filter Jobdesk */}
+                <select
+                  aria-label="Filter berdasarkan jobdesk"
+                  value={filterJobdesk}
+                  onChange={(e) => setFilterJobdesk(e.target.value)}
+                  className="px-3 py-1.5 text-xs rounded-xl border border-slate-200/80 dark:border-white/10 bg-slate-50 dark:bg-white/5 text-[#0F172A] dark:text-white font-semibold shadow-2xs"
+                >
+                  <option value="all">Semua Jobdesk</option>
+                  {jobdesks.map((jd) => (
+                    <option key={jd.id} value={jd.code}>
+                      {jd.code} - {jd.name || jd.code}
+                    </option>
+                  ))}
+                  <option value="UNASSIGNED">Tanpa Jobdesk</option>
+                </select>
+
+                {/* Filter Status Kerja / Libur */}
+                <select
+                  aria-label="Filter status dinas"
+                  value={filterDutyStatus}
+                  onChange={(e) => setFilterDutyStatus(e.target.value as any)}
+                  className="px-3 py-1.5 text-xs rounded-xl border border-slate-200/80 dark:border-white/10 bg-slate-50 dark:bg-white/5 text-[#0F172A] dark:text-white font-semibold shadow-2xs"
+                >
+                  <option value="all">Semua Status</option>
+                  <option value="working">On Duty (Kerja)</option>
+                  <option value="off">Off Day (Libur / Cuti)</option>
                 </select>
               </div>
             </div>
 
+            {/* Table */}
             <div className="overflow-x-auto border border-slate-200/80 dark:border-white/10 rounded-xl">
               <table className="w-full text-left text-xs">
                 <thead className="bg-[#F8FAFC] dark:bg-white/5 text-slate-600 dark:text-gray-300 font-bold border-b border-slate-200/80 dark:border-white/10">
                   <tr>
-                    <th className="py-3 px-4">Employee</th>
+                    <th className="py-3 px-4">Karyawan / ID</th>
+                    <th className="py-3 px-4">Posisi & Tim</th>
                     <th className="py-3 px-4">Shift</th>
                     <th className="py-3 px-4">Jobdesk</th>
-                    <th className="py-3 px-4">Hub Location</th>
-                    <th className="py-3 px-4">Working Hours</th>
+                    <th className="py-3 px-4">Hub Lokasi</th>
+                    <th className="py-3 px-4">Jam Kerja</th>
                     <th className="py-3 px-4">Status</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 dark:divide-white/5">
                   {filteredRoster.length === 0 ? (
                     <tr>
-                      <td colSpan={6} className="py-10 text-center text-xs text-slate-600 dark:text-gray-300 italic">
-                        Tidak ada jadwal personel untuk filter tanggal ini. Buka menu Schedule untuk menambahkan jadwal.
+                      <td colSpan={7} className="py-10 text-center text-xs text-slate-600 dark:text-gray-300 italic">
+                        Tidak ada jadwal personel yang cocok dengan filter tanggal/kategori ini.
                       </td>
                     </tr>
                   ) : (
-                    filteredRoster.map((item) => (
-                      <tr
-                        key={item.id}
-                        className="hover:bg-slate-50 dark:hover:bg-white/5 transition-colors"
-                      >
-                        <td className="py-3 px-4">
-                          <div className="font-bold text-[#0F172A] dark:text-white">{item.employeeName}</div>
-                          <div className="text-[10px] text-slate-600 dark:text-gray-300 font-mono mt-0.5">{item.employeeCode}</div>
-                        </td>
-                        <td className="py-3 px-4">
-                          <span
-                            className={`px-2 py-0.5 rounded-md text-[10px] font-bold font-mono ${
-                              getShiftBadgeStyle(item.shiftCode).badge
-                            }`}
-                          >
-                            {item.shiftCode}
-                          </span>
-                        </td>
-                        <td className="py-3 px-4">
-                          {item.jobdeskCode ? (
-                            <span className={`px-2 py-0.5 rounded-md text-[10px] font-extrabold font-mono ${
-                              getJobdeskBadgeStyle(item.jobdeskCode).badge
-                            }`}>
-                              {item.jobdeskCode}
+                    filteredRoster.map((item) => {
+                      const emp = empMap.get(item.employeeId) || empMap.get(item.employeeCode);
+                      const isOff = isOffShift(item.shiftCode);
+                      return (
+                        <tr
+                          key={item.id}
+                          className="hover:bg-slate-50 dark:hover:bg-white/5 transition-colors"
+                        >
+                          <td className="py-3 px-4">
+                            <div className="font-bold text-[#0F172A] dark:text-white">{item.employeeName}</div>
+                            <div className="text-[10px] text-slate-500 dark:text-gray-400 font-mono mt-0.5">
+                              {item.employeeCode}
+                            </div>
+                          </td>
+                          <td className="py-3 px-4">
+                            <div className="text-[11px] font-semibold text-slate-700 dark:text-gray-200">
+                              {emp?.role || emp?.level || 'CTSO Staff'}
+                            </div>
+                            <div className="text-[10px] text-slate-500 dark:text-gray-400">
+                              {emp?.teamName || 'Operations'}
+                            </div>
+                          </td>
+                          <td className="py-3 px-4">
+                            <span
+                              className={`px-2 py-0.5 rounded-md text-[10px] font-bold font-mono ${
+                                getShiftBadgeStyle(item.shiftCode).badge
+                              }`}
+                            >
+                              {item.shiftCode}
                             </span>
-                          ) : (
-                            <span className="text-[10px] text-slate-600 dark:text-gray-300">-</span>
-                          )}
-                        </td>
-                        <td className="py-3 px-4">
-                          <span className="flex items-center gap-1.5 text-[#0F172A] dark:text-gray-200 font-medium">
-                            <MapPin className="w-3.5 h-3.5 text-slate-500" aria-hidden="true" />
-                            {item.location || '-'}
-                          </span>
-                        </td>
-                        <td className="py-3 px-4 text-slate-600 dark:text-gray-300 font-mono text-[11px]">
-                          {getShiftHours(item.shiftCode)}
-                        </td>
-                        <td className="py-3 px-4">
-                          <span
-                            className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold ${
-                              item.publicationStatus === 'Published'
-                                ? 'bg-emerald-50 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 border border-emerald-200'
-                                : 'bg-[#FFFBEA] dark:bg-amber-950 text-[#8C6700] dark:text-amber-300 border border-[#FFEE85]'
-                            }`}
-                          >
-                            {item.publicationStatus}
-                          </span>
-                        </td>
-                      </tr>
-                    ))
+                          </td>
+                          <td className="py-3 px-4">
+                            {item.jobdeskCode && !isOff ? (
+                              <span
+                                className={`px-2 py-0.5 rounded-md text-[10px] font-extrabold font-mono ${
+                                  getJobdeskBadgeStyle(item.jobdeskCode).badge
+                                }`}
+                              >
+                                {item.jobdeskCode}
+                              </span>
+                            ) : (
+                              <span className="text-[10px] text-slate-400 dark:text-gray-500">-</span>
+                            )}
+                          </td>
+                          <td className="py-3 px-4">
+                            <span className="flex items-center gap-1.5 text-[#0F172A] dark:text-gray-200 font-medium">
+                              <MapPin className="w-3.5 h-3.5 text-slate-500" aria-hidden="true" />
+                              {item.location || emp?.defaultLocation || '-'}
+                            </span>
+                          </td>
+                          <td className="py-3 px-4 text-slate-600 dark:text-gray-300 font-mono text-[11px]">
+                            {getShiftHours(item.shiftCode)}
+                          </td>
+                          <td className="py-3 px-4">
+                            <span
+                              className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold ${
+                                isOff
+                                  ? 'bg-rose-50 dark:bg-rose-950/60 text-rose-800 dark:text-rose-300 border border-rose-200 dark:border-rose-900/50'
+                                  : item.publicationStatus === 'Published'
+                                  ? 'bg-emerald-50 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 border border-emerald-200'
+                                  : 'bg-[#FFFBEA] dark:bg-amber-950 text-[#8C6700] dark:text-amber-300 border border-[#FFEE85]'
+                              }`}
+                            >
+                              {isOff ? 'Off Day' : item.publicationStatus}
+                            </span>
+                          </td>
+                        </tr>
+                      );
+                    })
                   )}
                 </tbody>
               </table>
@@ -541,26 +788,33 @@ export const Dashboard: React.FC = () => {
           </div>
         </div>
 
+        {/* Right Sidebar: Shift Distribution */}
         <div className="lg:col-span-4 space-y-6">
           <div className="bg-white dark:bg-[#18181A] p-6 rounded-2xl border border-slate-200/80 dark:border-white/10 shadow-xs space-y-4">
             <div className="flex items-center justify-between">
               <h2 className="text-sm font-black text-[#0F172A] dark:text-white tracking-tight flex items-center gap-2">
                 <Clock className="w-4 h-4 text-indigo-600 dark:text-indigo-400" aria-hidden="true" />
-                <span>Shift Distribution</span>
+                <span>Distribusi Shift</span>
               </h2>
-              <span className="text-[11px] text-slate-600 dark:text-gray-300">Click shift to view</span>
+              <span className="text-[11px] text-slate-600 dark:text-gray-300">Klik untuk melihat detail</span>
             </div>
 
             <div className="space-y-3">
-              {shiftGroups.map((sh) => {
+              {shiftGroups.map((sg) => {
                 const total = dayAssignments.length || 1;
-                const pct = Math.round((sh.count / total) * 100);
+                const pct = Math.round((sg.count / total) * 100);
+                const sh = sg.shift;
 
                 return (
                   <button
-                    key={sh.id}
+                    key={sh.code}
                     type="button"
-                    onClick={() => openKpiDetail(`Shift Personnel: ${sh.name}`, sh.items)}
+                    onClick={() =>
+                      openKpiDetail(
+                        `Personel Shift: ${sh.name || sh.code} (${sg.isOff ? 'Libur/Rest' : 'Dinas'})`,
+                        sg.items
+                      )
+                    }
                     className="w-full text-left p-3.5 rounded-xl bg-slate-50 dark:bg-white/5 border border-slate-200/80 dark:border-white/10 hover:border-indigo-400 dark:hover:border-indigo-500/40 transition-all shadow-2xs"
                   >
                     <div className="flex items-center justify-between text-xs font-bold text-[#0F172A] dark:text-white mb-1.5">
@@ -575,10 +829,12 @@ export const Dashboard: React.FC = () => {
                           {sh.code}
                         </span>
                         <span className="text-[11px] font-medium text-slate-600 dark:text-gray-300">
-                          {sh.startTime} - {sh.endTime}
+                          {sg.isOff ? 'Libur (Rest)' : `${sh.startTime} - ${sh.endTime}`}
                         </span>
                       </div>
-                      <span className="font-mono text-[11px] text-[#0F172A] dark:text-white">{sh.count} Staff</span>
+                      <span className="font-mono text-[11px] text-[#0F172A] dark:text-white">
+                        {sg.count} Staf
+                      </span>
                     </div>
 
                     <div className="w-full h-2 rounded-full bg-slate-200/80 dark:bg-white/10 overflow-hidden mt-2">
@@ -595,6 +851,7 @@ export const Dashboard: React.FC = () => {
         </div>
       </div>
 
+      {/* Reusable KPI & Assignment Detail Modal */}
       {activeModalTitle &&
         createPortal(
           <div
@@ -612,7 +869,7 @@ export const Dashboard: React.FC = () => {
                 <div>
                   <h3 className="text-base font-black text-[#111111] dark:text-white">{activeModalTitle}</h3>
                   <p className="text-xs text-slate-600 dark:text-gray-300">
-                    Total {modalAssignments.length} records matching this category
+                    Total {modalAssignments.length} record terdata untuk kategori ini
                   </p>
                 </div>
                 <button
@@ -631,26 +888,45 @@ export const Dashboard: React.FC = () => {
                     Tidak ada personel dalam kategori ini pada tanggal {selectedDate}.
                   </div>
                 ) : (
-                  modalAssignments.map((item, idx) => (
-                    <div key={idx} className="py-2.5 flex items-center justify-between text-xs">
-                      <div>
-                        <div className="font-bold text-[#111111] dark:text-white">{item.employeeName}</div>
-                        <div className="text-[11px] text-slate-600 dark:text-gray-300 font-mono">
-                          {item.employeeCode} &bull; {item.location || 'Hub'}
+                  modalAssignments.map((item, idx) => {
+                    const emp = empMap.get(item.employeeId) || empMap.get(item.employeeCode);
+                    const isOff = isOffShift(item.shiftCode);
+                    return (
+                      <div key={idx} className="py-3 flex items-center justify-between text-xs gap-3">
+                        <div className="min-w-0">
+                          <div className="font-bold text-[#111111] dark:text-white truncate">
+                            {item.employeeName}
+                          </div>
+                          <div className="text-[11px] text-slate-500 dark:text-gray-400 font-mono mt-0.5">
+                            {item.employeeCode} &bull; {item.location || emp?.defaultLocation || 'Hub'}
+                          </div>
+                          {(item.role || emp?.role || emp?.level) && (
+                            <div className="text-[10px] text-slate-400 dark:text-gray-500 mt-0.5">
+                              {item.role || emp?.role || emp?.level} &bull; {item.teamName || emp?.teamName || 'CTSO'}
+                            </div>
+                          )}
+                        </div>
+                        <div className="text-right shrink-0">
+                          <span
+                            className={`px-2 py-0.5 rounded-md text-[10px] font-bold font-mono ${
+                              getShiftBadgeStyle(item.shiftCode).badge
+                            }`}
+                          >
+                            {item.shiftCode}
+                          </span>
+                          {item.jobdeskCode && !isOff && (
+                            <span
+                              className={`ml-1.5 px-2 py-0.5 rounded-md text-[10px] font-bold font-mono ${
+                                getJobdeskBadgeStyle(item.jobdeskCode).badge
+                              }`}
+                            >
+                              {item.jobdeskCode}
+                            </span>
+                          )}
                         </div>
                       </div>
-                      <div className="text-right">
-                        <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold font-mono ${getShiftBadgeStyle(item.shiftCode).badge}`}>
-                          {item.shiftCode}
-                        </span>
-                        {item.jobdeskCode && (
-                          <span className={`ml-1.5 px-2 py-0.5 rounded-md text-[10px] font-bold font-mono ${getJobdeskBadgeStyle(item.jobdeskCode).badge}`}>
-                            {item.jobdeskCode}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  ))
+                    );
+                  })
                 )}
               </div>
 
@@ -660,7 +936,7 @@ export const Dashboard: React.FC = () => {
                   onClick={() => setActiveModalTitle(null)}
                   className="px-4 py-2 rounded-xl bg-[#111111] text-[#F9C900] dark:bg-white dark:text-[#111111] text-xs font-bold"
                 >
-                  Close
+                  Tutup
                 </button>
               </div>
             </div>
