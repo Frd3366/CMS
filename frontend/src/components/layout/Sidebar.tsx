@@ -26,7 +26,8 @@ import {
   Sun,
   Moon,
   PanelLeftClose,
-  PanelLeftOpen
+  PanelLeftOpen,
+  BarChart3
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -237,6 +238,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
             <NavLink to="/requests" aria-label="Requests & Leaves" className={() => navItemClass('/requests')} title={isCollapsed ? 'Requests & Leaves' : undefined}>
               <ArrowLeftRight className="w-4 h-4 shrink-0" aria-hidden="true" />
               {!isCollapsed && <span>Requests & Leaves</span>}
+            </NavLink>
+
+            <NavLink to="/analytics" aria-label="Analytics" className={() => navItemClass('/analytics')} title={isCollapsed ? 'Analytics' : undefined}>
+              <BarChart3 className="w-4 h-4 shrink-0" aria-hidden="true" />
+              {!isCollapsed && <span>Analytics</span>}
             </NavLink>
 
             {showReports && (

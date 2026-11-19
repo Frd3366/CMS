@@ -50,6 +50,7 @@ export const AppLayout: React.FC = () => {
     if (p === '/schedule') return 'Shift Schedule';
     if (p === '/jobdesk') return 'Jobdesk Matrix';
     if (p === '/requests') return 'Requests & Leaves';
+    if (p === '/analytics') return 'Analytics & Shifting Insights';
     if (p === '/reports') return 'Operational Reports';
     if (p === '/history') return 'Schedule History';
     if (p.includes('/employees')) return 'Employee Directory';

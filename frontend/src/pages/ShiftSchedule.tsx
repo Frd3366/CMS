@@ -460,61 +460,14 @@ export const ShiftSchedule: React.FC = () => {
 
         <div className="flex flex-wrap items-center gap-2">
           {canManageSchedule && (
-            <>
-              <button
-                type="button"
-                onClick={() => {
-                  setBulkStartDate(getTodayIso());
-                  setBulkEndDate(getWeekAheadIso(7));
-                  setBulkEmployeeIds([]);
-                  setIsBulkModalOpen(true);
-                }}
-                className="px-3.5 py-2 rounded-xl border border-slate-300 dark:border-white/20 bg-transparent hover:bg-slate-50 dark:hover:bg-white/5 text-slate-700 dark:text-gray-200 text-xs font-semibold flex items-center gap-1.5 transition-colors shadow-2xs"
-              >
-                <Layers className="w-3.5 h-3.5 text-slate-500 dark:text-gray-400" aria-hidden="true" />
-                <span>Bulk Assign</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={handlePublishAll}
-                className="px-3.5 py-2 rounded-xl border border-slate-300 dark:border-white/20 bg-transparent hover:bg-slate-50 dark:hover:bg-white/5 text-slate-700 dark:text-gray-200 text-xs font-bold flex items-center gap-1.5 transition-colors shadow-2xs"
-                title="Publikasikan semua draft roster ke seluruh karyawan"
-              >
-                <Send className="w-3.5 h-3.5 text-slate-500 dark:text-gray-400" aria-hidden="true" />
-                <span>Publish Schedule</span>
-                {draftCount > 0 && (
-                  <span className="px-1.5 py-0.5 rounded-full text-[10px] bg-slate-200 dark:bg-white/20 text-slate-700 dark:text-gray-200 font-black font-mono">
-                    {draftCount} Draft
-                  </span>
-                )}
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setIsGSheetsModalOpen(true)}
-                className="px-3.5 py-2 rounded-xl border border-slate-300 dark:border-white/20 bg-transparent hover:bg-slate-50 dark:hover:bg-white/5 text-slate-700 dark:text-gray-200 text-xs font-bold flex items-center gap-1.5 transition-colors shadow-2xs"
-                title="Auto Backup ke Google Sheets (Setiap 1 Jam)"
-              >
-                <FileSpreadsheet className="w-3.5 h-3.5 text-slate-500 dark:text-gray-400" aria-hidden="true" />
-                <span>Auto Backup Sheets</span>
-                {gsheetsConfig.enabled && (
-                  <span
-                    className="w-2 h-2 rounded-full bg-slate-400 dark:bg-white/60 ring-2 ring-white dark:ring-[#18181A]"
-                    title="Auto Backup Aktif"
-                  />
-                )}
-              </button>
-
-              <button
-                type="button"
-                onClick={handleExportCSV}
-                className="px-3.5 py-2 rounded-xl border border-slate-300 dark:border-white/20 bg-transparent hover:bg-slate-50 dark:hover:bg-white/5 text-slate-700 dark:text-gray-200 text-xs font-semibold flex items-center gap-1.5 transition-colors shadow-2xs"
-              >
-                <Download className="w-3.5 h-3.5 text-slate-500 dark:text-gray-400" aria-hidden="true" />
-                <span>Export CSV</span>
-              </button>
-            </>
+            <button
+              type="button"
+              onClick={handleExportCSV}
+              className="px-3.5 py-2 rounded-xl border border-slate-300 dark:border-white/20 bg-transparent hover:bg-slate-50 dark:hover:bg-white/5 text-slate-700 dark:text-gray-200 text-xs font-semibold flex items-center gap-1.5 transition-colors shadow-2xs"
+            >
+              <Download className="w-3.5 h-3.5 text-slate-500 dark:text-gray-400" aria-hidden="true" />
+              <span>Export CSV</span>
+            </button>
           )}
 
           {canManageSchedule && (

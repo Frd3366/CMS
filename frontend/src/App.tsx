@@ -19,6 +19,7 @@ import { AnnouncementManagement } from './pages/AnnouncementManagement';
 import { ActivityLogList } from './pages/ActivityLogList';
 import { ScheduleHistory } from './pages/ScheduleHistory';
 import { Reports } from './pages/Reports';
+import { Analytics } from './pages/Analytics';
 import { SettingsProfile } from './pages/SettingsProfile';
 
 const ProtectedRoute: React.FC<{ children: React.ReactNode; allowedRoles?: ('Admin' | 'SPV' | 'Employee')[] }> = ({
@@ -129,7 +130,8 @@ export const App: React.FC = () => {
                     }
                   />
 
-                  {/* Reports & Profile */}
+                  {/* Reports, Analytics & Profile */}
+                  <Route path="analytics" element={<Analytics />} />
                   <Route
                     path="reports"
                     element={

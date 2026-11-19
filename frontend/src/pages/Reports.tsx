@@ -139,23 +139,6 @@ export const Reports: React.FC = () => {
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          {canManage && (
-            <button
-              type="button"
-              onClick={() => setIsGSheetsModalOpen(true)}
-              className="px-3.5 py-1.5 rounded-xl bg-white dark:bg-white/5 hover:bg-slate-50 dark:hover:bg-white/10 text-slate-700 dark:text-gray-200 border border-slate-300 dark:border-white/15 text-xs font-bold flex items-center gap-2 shadow-2xs transition-colors cursor-pointer"
-            >
-              <FileSpreadsheet className="w-3.5 h-3.5 text-slate-500 dark:text-gray-400" />
-              <span>Auto Backup Google Sheets</span>
-              {gsheetsConfig.enabled && (
-                <span
-                  className="w-2 h-2 rounded-full bg-slate-400 dark:bg-white/60 ring-2 ring-white dark:ring-[#18181A]"
-                  title="Auto Backup 1 Jam Aktif"
-                />
-              )}
-            </button>
-          )}
-
           <button
             type="button"
             onClick={handlePrint}

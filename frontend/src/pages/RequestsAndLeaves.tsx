@@ -387,21 +387,6 @@ export const RequestsAndLeaves: React.FC = () => {
         </div>
 
         <div className="flex items-center gap-2 flex-wrap">
-          {/* Telegram Alert Notification Button: Only for Admin/SPV */}
-          {isAdminOrSpv && (
-            <button
-              type="button"
-              onClick={() => setIsTelegramModalOpen(true)}
-              className="px-3.5 py-2 rounded-xl bg-white dark:bg-white/5 hover:bg-slate-50 dark:hover:bg-white/10 text-slate-700 dark:text-gray-200 border border-slate-300 dark:border-white/15 text-xs font-bold flex items-center gap-2 transition-all shadow-2xs cursor-pointer"
-              title="Pengaturan Notifikasi Alert Telegram"
-            >
-              <Send className="w-3.5 h-3.5 text-slate-500 dark:text-gray-400" />
-              <span>Alert Telegram</span>
-              {telegramConfig.enabled && (
-                <span className="w-2 h-2 rounded-full bg-slate-400 dark:bg-white/60 ring-2 ring-white dark:ring-[#18181A]" title="Telegram Alert Aktif" />
-              )}
-            </button>
-          )}
 
           {activeSection === 'shifts' ? (
             <button
