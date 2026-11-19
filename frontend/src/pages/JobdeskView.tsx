@@ -25,6 +25,7 @@ import {
 import { ScheduleAssignment, WorkLocation } from '../types';
 import { getShiftBadgeStyle, getJobdeskBadgeStyle, getContrastTextColor, toCssSlug, parseJobdeskTasks, getAgentPillStyle } from '../utils/codeStyles';
 import { getStoredHolidays, saveStoredHolidays, HolidayRecord } from '../utils/holidayUtils';
+import { parseLocalDate, formatLocalDateIso, getTodayIso } from '../utils/dateUtils';
 
 export const JobdeskView: React.FC = () => {
   const { schedules, jobdesks, shifts, employees, currentUser, addSchedule, updateSchedule, deleteSchedule } =
@@ -34,13 +35,6 @@ export const JobdeskView: React.FC = () => {
   const [viewMode, setViewMode] = useState<'daily' | 'weekly' | 'monthly'>('daily');
   const [selectedJobdeskDetail, setSelectedJobdeskDetail] = useState<any | null>(null);
 
-  const getTodayIso = () => {
-    const now = new Date();
-    const y = now.getFullYear();
-    const m = String(now.getMonth() + 1).padStart(2, '0');
-    const d = String(now.getDate()).padStart(2, '0');
-    return `${y}-${m}-${d}`;
-  };
 
   const formatDateDMY = (isoDate: string) => {
     if (!isoDate) return '';
@@ -170,7 +164,7 @@ export const JobdeskView: React.FC = () => {
     }
   }, [isAddModalOpen, selectedEmployeeSchedule]);
 
-  const currentAnchorDate = useMemo(() => new Date(currentDateStr), [currentDateStr]);
+  const currentAnchorDate = useMemo(() => parseLocalDate(currentDateStr), [currentDateStr]);
 
   // Weekly days generator
   const weeklyDays = useMemo(() => {
@@ -183,7 +177,7 @@ export const JobdeskView: React.FC = () => {
     for (let i = 0; i < 7; i++) {
       const d = new Date(start);
       d.setDate(d.getDate() + i);
-      const iso = d.toISOString().split('T')[0];
+      const iso = formatLocalDateIso(d);
       const dayNames = ['Min', 'Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab'];
       days.push({
         iso,
@@ -205,7 +199,7 @@ export const JobdeskView: React.FC = () => {
     const days = [];
     for (let i = 1; i <= totalDays; i++) {
       const d = new Date(year, month, i);
-      const iso = d.toISOString().split('T')[0];
+      const iso = formatLocalDateIso(d);
       days.push({
         iso,
         dayNumber: i,
@@ -280,7 +274,7 @@ export const JobdeskView: React.FC = () => {
     } else {
       cur.setMonth(cur.getMonth() + (direction === 'next' ? 1 : -1));
     }
-    setCurrentDateStr(cur.toISOString().split('T')[0]);
+    setCurrentDateStr(formatLocalDateIso(cur));
   };
 
   // Export Jobdesk Matrix (PRD 12.3)
@@ -742,7 +736,11 @@ export const JobdeskView: React.FC = () => {
 
                     {weeklyDays.map((day) => {
                       const assignment = visibleSchedules.find(
-                        (s) => s.employeeId === emp.id && s.date === day.iso
+                        (s) =>
+                          (s.employeeId === emp.id ||
+                            s.employeeId === emp.employeeNo ||
+                            s.employeeCode === emp.employeeNo) &&
+                          s.date === day.iso
                       );
                       const isSunday = day.dayName === 'Min' || day.dayName === 'Minggu';
                       const hasHoliday = !!holidays[day.iso];
@@ -916,7 +914,11 @@ export const JobdeskView: React.FC = () => {
 
                     {monthlyDays.map((day) => {
                       const assignment = visibleSchedules.find(
-                        (s) => s.employeeId === emp.id && s.date === day.iso
+                        (s) =>
+                          (s.employeeId === emp.id ||
+                            s.employeeId === emp.employeeNo ||
+                            s.employeeCode === emp.employeeNo) &&
+                          s.date === day.iso
                       );
                       const isSunday = day.dayName === 'Min' || day.dayName === 'Minggu';
                       const hasHoliday = !!holidays[day.iso];

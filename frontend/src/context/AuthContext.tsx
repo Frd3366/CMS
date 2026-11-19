@@ -37,6 +37,7 @@ import {
 } from '../data/mockData';
 import { syncDynamicStyles } from '../utils/codeStyles';
 import { getGoogleSheetsConfig, executeGoogleSheetsBackup } from '../utils/googleSheetsBackup';
+import { parseLocalDate, formatLocalDateIso } from '../utils/dateUtils';
 
 interface AuthContextType {
   currentUser: User | null;
@@ -278,6 +279,25 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   useEffect(() => saveState('notifications', notifications), [notifications]);
   useEffect(() => saveState('announcements', announcements), [announcements]);
   useEffect(() => saveState('spv_permissions', spvPermissions), [spvPermissions]);
+
+  // Auto-purge orphaned schedule assignments (assignments belonging to deleted or non-existent employees)
+  useEffect(() => {
+    if (employees.length === 0) return;
+    const validIds = new Set<string>();
+    employees.forEach((e) => {
+      if (e.id) validIds.add(e.id);
+      if (e.employeeNo) validIds.add(e.employeeNo);
+    });
+    setSchedules((prev) => {
+      const filtered = prev.filter(
+        (s) => validIds.has(s.employeeId) || (s.employeeCode && validIds.has(s.employeeCode))
+      );
+      if (filtered.length !== prev.length) {
+        return filtered;
+      }
+      return prev;
+    });
+  }, [employees]);
 
   // Central Database Sync Function (Upload local to PostgreSQL)
   const syncToServer = useCallback(async (): Promise<{ success: boolean; message: string }> => {
@@ -915,7 +935,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (emp.status === 'inactive') return { valid: false, error: 'Karyawan nonaktif tidak dapat diberi roster baru.' };
 
       // 2. Duplicate Assignment Check on same date
-      const existing = schedules.find((s) => s.employeeId === empId && s.date === date && s.id !== ignoreId);
+      const existing = schedules.find(
+        (s) =>
+          (s.employeeId === empId || s.employeeId === emp.employeeNo || s.employeeCode === emp.employeeNo) &&
+          s.date === date &&
+          s.id !== ignoreId
+      );
       if (existing) {
         return { valid: false, error: `Karyawan ${emp.name} sudah memiliki assignment pada ${date} (${existing.shiftCode}).` };
       }
@@ -1242,10 +1267,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const copyPreviousSchedule = useCallback(
     (sourceRange: 'yesterday' | 'last_week', targetDate: string) => {
       // Calculate source date
-      const targetObj = new Date(targetDate);
+      const targetObj = parseLocalDate(targetDate);
       const daysBack = sourceRange === 'yesterday' ? 1 : 7;
       targetObj.setDate(targetObj.getDate() - daysBack);
-      const sourceDateStr = targetObj.toISOString().split('T')[0];
+      const sourceDateStr = formatLocalDateIso(targetObj);
 
       const sourceItems = schedules.filter((s) => s.date === sourceDateStr);
       let count = 0;
@@ -1283,13 +1308,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       let count = 0;
 
       for (let day = 0; day < daysCount; day++) {
-        const curDate = new Date(startDate);
+        const curDate = parseLocalDate(startDate);
         curDate.setDate(curDate.getDate() + day);
-        const dateStr = curDate.toISOString().split('T')[0];
+        const dateStr = formatLocalDateIso(curDate);
 
         activeEmps.forEach((emp, empIdx) => {
           // Check if already assigned
-          const exists = schedules.some((s) => s.employeeId === emp.id && s.date === dateStr);
+          const exists = schedules.some((s) => (s.employeeId === emp.id || s.employeeCode === emp.employeeNo) && s.date === dateStr);
           if (!exists) {
             // Predictable balanced rotation formula
             const shiftIdx = (empIdx + day) % standardShifts.length;
@@ -1731,14 +1756,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       // Generate all dates in the range [startDate, endDate]
       const leaveDates: string[] = [];
-      const curr = new Date(target.startDate);
-      const end = new Date(target.endDate);
+      const curr = parseLocalDate(target.startDate);
+      const end = parseLocalDate(target.endDate);
       while (curr <= end) {
-        leaveDates.push(curr.toISOString().split('T')[0]);
+        leaveDates.push(formatLocalDateIso(curr));
         curr.setDate(curr.getDate() + 1);
       }
 
-      const emp = employees.find((e) => e.id === target.employeeId);
+      const emp = employees.find((e) => e.id === target.employeeId || e.employeeNo === target.employeeId);
 
       // Determine shift code based on leave type: Cuti, Sakit, or Ijin
       const getLeaveShiftCode = (typeStr: string): string => {
@@ -1751,11 +1776,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       // Auto update active work shift on roster to Cuti/Sakit/Ijin during approved leave dates and deploy to published schedule & jobdesk!
       setSchedules((prev) => {
+        const matchesEmp = (s: ScheduleAssignment) =>
+          s.employeeId === target.employeeId ||
+          (emp && s.employeeId === emp.id) ||
+          (emp && s.employeeId === emp.employeeNo) ||
+          (emp && s.employeeCode === emp.employeeNo);
+
         const updated = prev.map((s) => {
-          if (
-            s.employeeId === target.employeeId &&
-            leaveDates.includes(s.date)
-          ) {
+          if (matchesEmp(s) && leaveDates.includes(s.date)) {
             return {
               ...s,
               shiftCode: targetShiftCode,
@@ -1772,12 +1800,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
         // For any leave date that doesn't have an assignment row yet, create it so schedule & jobdesk reflect it immediately!
         leaveDates.forEach((dateStr) => {
-          const exists = updated.some((s) => s.employeeId === target.employeeId && s.date === dateStr);
+          const exists = updated.some((s) => matchesEmp(s) && s.date === dateStr);
           if (!exists) {
             updated.push({
               id: `sched_leave_${Date.now()}_${dateStr}`,
-              employeeId: target.employeeId,
-              employeeName: target.employeeName,
+              employeeId: emp?.id || target.employeeId,
+              employeeName: emp?.name || target.employeeName,
               employeeCode: emp?.employeeNo || 'CTSO-0000',
               date: dateStr,
               shiftCode: targetShiftCode,
@@ -1816,6 +1844,22 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const rejectLeave = useCallback(
     (leaveId: string) => {
+      const target = leaves.find((l) => l.id === leaveId);
+      if (target) {
+        // Rollback any automated leave assignments created for this leave
+        const emp = employees.find((e) => e.id === target.employeeId || e.employeeNo === target.employeeId);
+        setSchedules((prev) =>
+          prev.filter(
+            (s) =>
+              !(
+                (s.employeeId === target.employeeId || (emp && s.employeeId === emp.id) || (emp && s.employeeCode === emp.employeeNo)) &&
+                s.date >= target.startDate &&
+                s.date <= target.endDate &&
+                (s.id.startsWith('sched_leave_') || ['Sakit', 'Cuti', 'Ijin'].includes(s.shiftCode))
+              )
+          )
+        );
+      }
       setLeaves((prev) =>
         prev.map((l) =>
           l.id === leaveId
@@ -1825,17 +1869,33 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       );
       addActivityLog('REJECT_LEAVE', 'leave', `Menolak cuti #${leaveId}`, leaveId);
     },
-    [currentUser, getNowWITAString, addActivityLog]
+    [leaves, employees, currentUser, getNowWITAString, addActivityLog]
   );
 
   const cancelLeave = useCallback(
     (leaveId: string) => {
+      const target = leaves.find((l) => l.id === leaveId);
+      if (target) {
+        // Rollback any automated leave assignments created for this leave
+        const emp = employees.find((e) => e.id === target.employeeId || e.employeeNo === target.employeeId);
+        setSchedules((prev) =>
+          prev.filter(
+            (s) =>
+              !(
+                (s.employeeId === target.employeeId || (emp && s.employeeId === emp.id) || (emp && s.employeeCode === emp.employeeNo)) &&
+                s.date >= target.startDate &&
+                s.date <= target.endDate &&
+                (s.id.startsWith('sched_leave_') || ['Sakit', 'Cuti', 'Ijin'].includes(s.shiftCode))
+              )
+          )
+        );
+      }
       setLeaves((prev) =>
         prev.map((l) => (l.id === leaveId ? { ...l, status: 'Cancelled' } : l))
       );
       addActivityLog('CANCEL_LEAVE', 'leave', `Membatalkan pengajuan cuti #${leaveId}`, leaveId);
     },
-    [addActivityLog]
+    [leaves, employees, addActivityLog]
   );
 
   // Master Data Add/Update
@@ -2073,7 +2133,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (!target) return { success: false, error: 'Data karyawan tidak ditemukan.' };
 
       setEmployees((prev) => prev.filter((e) => e.id !== id));
-      setSchedules((prev) => prev.filter((s) => s.employeeId !== id));
+      setSchedules((prev) =>
+        prev.filter(
+          (s) =>
+            s.employeeId !== id &&
+            s.employeeCode !== target.employeeNo &&
+            s.employeeId !== target.employeeNo
+        )
+      );
 
       apiClient.isBackendAvailable().then((isUp) => {
         if (isUp) {

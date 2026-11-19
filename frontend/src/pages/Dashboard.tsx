@@ -14,13 +14,15 @@ import {
   X,
   ArrowRight,
   Briefcase,
-  CheckCircle2
+  CheckCircle2,
+  Trash2
 } from 'lucide-react';
 import { getShiftBadgeStyle, getJobdeskBadgeStyle, getContrastTextColor } from '../utils/codeStyles';
 
 export const Dashboard: React.FC = () => {
-  const { employees, schedules, shifts, jobdesks, leaves, currentUser } = useAuth();
+  const { employees, schedules, shifts, jobdesks, leaves, currentUser, deleteSchedule } = useAuth();
   const navigate = useNavigate();
+  const canManage = currentUser?.role === 'Admin' || currentUser?.role === 'SPV';
 
   const getTodayIso = () => {
     const now = new Date();
@@ -86,6 +88,11 @@ export const Dashboard: React.FC = () => {
   const dayAssignments = useMemo(() => {
     return schedules.filter((s) => {
       if (s.date !== selectedDate) return false;
+
+      // Filter out orphaned schedules whose employee does not exist in master employee directory
+      const hasEmp = empMap.has(s.employeeId) || (s.employeeCode && empMap.has(s.employeeCode));
+      if (!hasEmp) return false;
+
       if (currentUser?.role === 'Employee' && s.publicationStatus !== 'Published') {
         return false;
       }
@@ -94,7 +101,7 @@ export const Dashboard: React.FC = () => {
       }
       return true;
     });
-  }, [schedules, selectedDate, locationFilter, currentUser]);
+  }, [schedules, selectedDate, locationFilter, currentUser, empMap]);
 
   // Comprehensive KPIs
   const kpis = useMemo(() => {
@@ -866,22 +873,40 @@ export const Dashboard: React.FC = () => {
                             </div>
                           )}
                         </div>
-                        <div className="text-right shrink-0">
-                          <span
-                            className={`px-2 py-0.5 rounded-md text-[10px] font-bold font-mono ${
-                              getShiftBadgeStyle(item.shiftCode).badge
-                            }`}
-                          >
-                            {item.shiftCode}
-                          </span>
-                          {item.jobdeskCode && !isOff && (
+                        <div className="text-right shrink-0 flex items-center gap-2">
+                          <div>
                             <span
-                              className={`ml-1.5 px-2 py-0.5 rounded-md text-[10px] font-bold font-mono ${
-                                getJobdeskBadgeStyle(item.jobdeskCode).badge
+                              className={`px-2 py-0.5 rounded-md text-[10px] font-bold font-mono ${
+                                getShiftBadgeStyle(item.shiftCode).badge
                               }`}
                             >
-                              {item.jobdeskCode}
+                              {item.shiftCode}
                             </span>
+                            {item.jobdeskCode && !isOff && (
+                              <span
+                                className={`ml-1.5 px-2 py-0.5 rounded-md text-[10px] font-bold font-mono ${
+                                  getJobdeskBadgeStyle(item.jobdeskCode).badge
+                                }`}
+                              >
+                                {item.jobdeskCode}
+                              </span>
+                            )}
+                          </div>
+                          {canManage && item.id && !item.id.startsWith('leave_') && (
+                            <button
+                              type="button"
+                              title="Hapus assignment ini dari roster"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                if (window.confirm(`Hapus assignment shift ${item.shiftCode} untuk ${item.employeeName}?`)) {
+                                  deleteSchedule(item.id);
+                                  setModalAssignments((prev) => prev.filter((m) => m.id !== item.id));
+                                }
+                              }}
+                              className="p-1 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" aria-hidden="true" />
+                            </button>
                           )}
                         </div>
                       </div>

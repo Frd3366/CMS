@@ -7,6 +7,7 @@ import { getGoogleSheetsConfig, GoogleSheetsBackupConfig } from '../utils/google
 import { ScheduleAssignment, WorkLocation } from '../types';
 import { getShiftBadgeStyle, getJobdeskBadgeStyle, getContrastTextColor, toCssSlug } from '../utils/codeStyles';
 import { getStoredHolidays, saveStoredHolidays, HolidayRecord } from '../utils/holidayUtils';
+import { parseLocalDate, formatLocalDateIso, getTodayIso, getWeekAheadIso, formatDateDMY } from '../utils/dateUtils';
 import {
   Calendar as CalendarIcon,
   ChevronLeft,
@@ -50,31 +51,6 @@ export const ShiftSchedule: React.FC = () => {
 
   // View state: daily kanban, weekly table, monthly table (PRD 5.2, 5.3, 5.4)
   const [viewMode, setViewMode] = useState<'daily' | 'weekly' | 'monthly'>('weekly');
-
-  // Real today helper & date formatting dd/mm/yyyy
-  const getTodayIso = () => {
-    const now = new Date();
-    const y = now.getFullYear();
-    const m = String(now.getMonth() + 1).padStart(2, '0');
-    const d = String(now.getDate()).padStart(2, '0');
-    return `${y}-${m}-${d}`;
-  };
-
-  const getWeekAheadIso = (days = 7) => {
-    const future = new Date();
-    future.setDate(future.getDate() + days);
-    const y = future.getFullYear();
-    const m = String(future.getMonth() + 1).padStart(2, '0');
-    const d = String(future.getDate()).padStart(2, '0');
-    return `${y}-${m}-${d}`;
-  };
-
-  const formatDateDMY = (isoDate: string) => {
-    if (!isoDate) return '';
-    const parts = isoDate.split('-');
-    if (parts.length !== 3) return isoDate;
-    return `${parts[2]}/${parts[1]}/${parts[0]}`;
-  };
 
   // Active anchor date
   const [currentDateStr, setCurrentDateStr] = useState<string>(() => getTodayIso());
@@ -167,7 +143,7 @@ export const ShiftSchedule: React.FC = () => {
   };
 
   // Date calculation helpers
-  const currentAnchorDate = useMemo(() => new Date(currentDateStr), [currentDateStr]);
+  const currentAnchorDate = useMemo(() => parseLocalDate(currentDateStr), [currentDateStr]);
 
   // Weekly days generator: 7 days around anchor date
   const weeklyDays = useMemo(() => {
@@ -180,7 +156,7 @@ export const ShiftSchedule: React.FC = () => {
     for (let i = 0; i < 7; i++) {
       const d = new Date(start);
       d.setDate(d.getDate() + i);
-      const iso = d.toISOString().split('T')[0];
+      const iso = formatLocalDateIso(d);
       const dayNames = ['Min', 'Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab'];
       days.push({
         iso,
@@ -202,7 +178,7 @@ export const ShiftSchedule: React.FC = () => {
     const days = [];
     for (let i = 1; i <= totalDays; i++) {
       const d = new Date(year, month, i);
-      const iso = d.toISOString().split('T')[0];
+      const iso = formatLocalDateIso(d);
       days.push({
         iso,
         dayNumber: i,
@@ -282,7 +258,7 @@ export const ShiftSchedule: React.FC = () => {
     } else {
       cur.setMonth(cur.getMonth() + (direction === 'next' ? 1 : -1));
     }
-    setCurrentDateStr(cur.toISOString().split('T')[0]);
+    setCurrentDateStr(formatLocalDateIso(cur));
   };
 
   // Open Add Assignment
@@ -850,7 +826,11 @@ export const ShiftSchedule: React.FC = () => {
                     {/* 7 Days Grid Cells */}
                     {weeklyDays.map((day) => {
                       const assignment = visibleSchedules.find(
-                        (s) => s.employeeId === emp.id && s.date === day.iso
+                        (s) =>
+                          (s.employeeId === emp.id ||
+                            s.employeeId === emp.employeeNo ||
+                            s.employeeCode === emp.employeeNo) &&
+                          s.date === day.iso
                       );
                       const isSunday = day.dayName === 'Min';
                       const holidayName = holidays[day.iso];
@@ -1005,7 +985,13 @@ export const ShiftSchedule: React.FC = () => {
                       <div className="text-[10px] text-slate-400 font-mono font-normal">{emp.employeeNo}</div>
                     </td>
                     {monthlyDays.map((d) => {
-                      const assignment = visibleSchedules.find((s) => s.employeeId === emp.id && s.date === d.iso);
+                      const assignment = visibleSchedules.find(
+                        (s) =>
+                          (s.employeeId === emp.id ||
+                            s.employeeId === emp.employeeNo ||
+                            s.employeeCode === emp.employeeNo) &&
+                          s.date === d.iso
+                      );
                       const isSunday = d.dayName === 'Min' || d.dayName === 'Minggu';
                       const hasHoliday = !!holidays[d.iso];
 
