@@ -93,7 +93,7 @@ export const Login: React.FC = () => {
 
     setIsRegistering(true);
     try {
-      const result = register(regName, regEmail, regPassword, 'Employee');
+      const result = await register(regName, regEmail, regPassword, 'Employee');
       if (result.success) {
         setUsername(regEmail.trim().toLowerCase());
         setPassword(regPassword);

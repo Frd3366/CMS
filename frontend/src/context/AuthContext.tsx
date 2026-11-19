@@ -134,7 +134,7 @@ interface AuthContextType {
     password: string,
     role?: 'Admin' | 'SPV' | 'Employee',
     employeeNo?: string
-  ) => { success: boolean; error?: string; user?: User };
+  ) => Promise<{ success: boolean; error?: string; user?: User }>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -315,6 +315,37 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const localEmps = loadState<EmployeeItem[]>('employees', []);
         const localSchedules = loadState<ScheduleAssignment[]>('schedules', []);
 
+        // Sync users from backend if available
+        if (res.users && Array.isArray(res.users) && res.users.length > 0) {
+          setUsers((prev) => {
+            const map = new Map<string, User>();
+            prev.forEach((u) => map.set(u.email.toLowerCase(), u));
+            res.users.forEach((su: any) => {
+              const email = (su.email || '').toLowerCase();
+              if (!email) return;
+              const existing = map.get(email);
+              map.set(email, {
+                id: su.id || existing?.id || 'usr_' + Date.now(),
+                userId: su.employeeId || existing?.userId || 'CTSO-ADMIN',
+                employeeId: su.employeeId || existing?.employeeId,
+                name: su.name || existing?.name || 'User',
+                email: su.email,
+                role: su.role || existing?.role || 'Employee',
+                status: su.status || existing?.status || 'active',
+                teamId: existing?.teamId || 'team_core',
+                teamName: existing?.teamName || 'Team Core Network Ops',
+                department: existing?.department || 'Operations',
+                avatarText: (su.name || 'U').substring(0, 2).toUpperCase(),
+                phone: existing?.phone || '-',
+                createdAt: su.createdAt || existing?.createdAt || new Date().toISOString(),
+                lastLogin: existing?.lastLogin || 'Belum pernah login',
+                password: existing?.password || 'admin'
+              });
+            });
+            return Array.from(map.values());
+          });
+        }
+
         // Case 1: Server already has central records -> sync directly into state!
         if (serverEmps.length > 0) {
           setEmployees(serverEmps);
@@ -373,6 +404,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const isUp = await apiClient.isBackendAvailable();
         if (isUp) {
           await apiClient.post('/sync/push', {
+            users,
             employees,
             shifts,
             jobdesks,
@@ -384,7 +416,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         // Non-blocking fallback
       }
     }, 1200);
-  }, [employees, shifts, jobdesks, schedules, announcements]);
+  }, [users, employees, shifts, jobdesks, schedules, announcements]);
 
   // Automated Google Sheets Backup Scheduler (Default every 1 hour / 60 mins)
   useEffect(() => {
@@ -561,6 +593,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       };
 
       setUsers((prev) => [newUser, ...prev.filter((u) => u.id !== newUser.id && u.email.toLowerCase() !== newUser.email.toLowerCase())]);
+
+      // Asynchronously persist to backend PostgreSQL
+      apiClient.isBackendAvailable().then((isUp) => {
+        if (isUp && newUser.email) {
+          apiClient.post('/auth/users', {
+            name: newUser.name,
+            email: newUser.email,
+            password: userData.password || 'admin',
+            role: newUser.role,
+            employee_id: newUser.employeeId || newUser.userId
+          }).catch((e) => console.warn('Failed to sync user to backend', e));
+        }
+      });
+
       addActivityLog('CREATE_USER', 'auth', `Akun baru ${newUser.name} (${newUser.email}) dibuat dengan role ${newUser.role}`);
       return newUser;
     },
@@ -572,6 +618,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setUsers((prev) =>
         prev.map((u) => (u.id === id ? { ...u, ...updatedData } : u))
       );
+      if (updatedData.password) {
+        apiClient.isBackendAvailable().then((isUp) => {
+          if (isUp) {
+            apiClient.put(`/auth/users/${id}/password`, {
+              new_password: updatedData.password
+            }).catch((e) => console.warn('Failed to update password on backend', e));
+          }
+        });
+      }
       addActivityLog('UPDATE_USER', 'auth', `Data akun ID ${id} diperbarui`);
     },
     [addActivityLog]
@@ -584,6 +639,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return false;
       }
       setUsers((prev) => prev.filter((u) => u.id !== id));
+      apiClient.isBackendAvailable().then((isUp) => {
+        if (isUp) {
+          apiClient.delete(`/auth/users/${id}`).catch((e) => console.warn('Failed to delete user on backend', e));
+        }
+      });
       if (userToDelete) {
         addActivityLog('DELETE_USER', 'auth', `Akun ${userToDelete.name} (${userToDelete.email}) dihapus`);
       }
@@ -593,7 +653,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   );
 
   const register = useCallback(
-    (
+    async (
       name: string,
       email: string,
       password: string,
@@ -657,6 +717,26 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       };
 
       setUsers((prev) => [newUser, ...prev]);
+
+      // Persist directly to backend PostgreSQL
+      try {
+        const isUp = await apiClient.isBackendAvailable();
+        if (isUp) {
+          const res = await apiClient.post<any>('/auth/register', {
+            name: name.trim(),
+            email: cleanEmail,
+            password: password,
+            role: role,
+            employee_id: generatedEmpNo
+          });
+          if (res.data?.user?.id) {
+            newUser.id = res.data.user.id;
+          }
+        }
+      } catch (err) {
+        console.warn('Backend register sync warning:', err);
+      }
+
       addActivityLog('REGISTER_USER', 'auth', `Pendaftaran mandiri: ${newUser.name} (${cleanEmail}) terdaftar sebagai ${role}`);
       return { success: true, user: newUser };
     },
@@ -1863,6 +1943,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     (employee: Omit<EmployeeItem, 'id'>) => {
       const newEmp: EmployeeItem = { ...employee, id: `emp_${Date.now()}` };
       setEmployees((prev) => [...prev, newEmp]);
+
+      apiClient.isBackendAvailable().then((isUp) => {
+        if (isUp) {
+          apiClient.post('/employees', {
+            employee_no: employee.employeeNo,
+            name: employee.name,
+            role: employee.role,
+            status: employee.status || 'active',
+            default_location: employee.defaultLocation || 'Badung',
+            email: employee.email || null,
+            phone: employee.phone || null
+          }).catch((e) => console.warn('Failed to persist employee to backend', e));
+        }
+      });
+
       addActivityLog('CREATE_EMPLOYEE', 'employee', `Menambah karyawan baru ${employee.name} (${employee.employeeNo})`);
     },
     [addActivityLog]
@@ -1871,6 +1966,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const updateEmployee = useCallback(
     (id: string, employee: Partial<EmployeeItem>) => {
       setEmployees((prev) => prev.map((e) => (e.id === id ? { ...e, ...employee } : e)));
+
+      apiClient.isBackendAvailable().then((isUp) => {
+        if (isUp) {
+          apiClient.put(`/employees/${id}`, {
+            employee_no: employee.employeeNo,
+            name: employee.name,
+            role: employee.role,
+            status: employee.status,
+            default_location: employee.defaultLocation,
+            email: employee.email,
+            phone: employee.phone
+          }).catch((e) => console.warn('Failed to update employee on backend', e));
+        }
+      });
+
       addActivityLog('UPDATE_EMPLOYEE', 'employee', `Memperbarui data karyawan #${id}`);
     },
     [addActivityLog]
@@ -1883,6 +1993,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       setEmployees((prev) => prev.filter((e) => e.id !== id));
       setSchedules((prev) => prev.filter((s) => s.employeeId !== id));
+
+      apiClient.isBackendAvailable().then((isUp) => {
+        if (isUp) {
+          apiClient.delete(`/employees/${id}`).catch((e) => console.warn('Failed to delete employee on backend', e));
+        }
+      });
 
       addActivityLog('DELETE_EMPLOYEE', 'employee', `Menghapus data karyawan ${target.name} (${target.employeeNo})`);
       return { success: true };

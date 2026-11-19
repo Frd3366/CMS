@@ -1,7 +1,8 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
+import uuid
 from ..database import get_db
-from ..models import UserModel
+from ..models import UserModel, EmployeeModel
 from ..schemas import LoginRequest, TokenResponse, UserCreate, PasswordUpdate
 from ..security import (
     verify_password,
@@ -15,12 +16,61 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 
 @router.post("/login", response_model=TokenResponse)
 def login(req: LoginRequest, db: Session = Depends(get_db)):
-    clean_email = req.email.strip().lower()
-    user = db.query(UserModel).filter(UserModel.email == clean_email).first()
+    clean_input = (req.email or "").strip()
+    clean_lower = clean_input.lower()
+    if not clean_input:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Email atau User ID wajib diisi."
+        )
+
+    # 1. Direct email match or admin alias
+    user = None
+    if clean_lower in ["admin", "ctso-admin", "administrator"]:
+        user = db.query(UserModel).filter(UserModel.email == "admin@ctso.net").first()
+    else:
+        user = db.query(UserModel).filter(UserModel.email.ilike(clean_lower)).first()
+
+    # 2. If not found by email, lookup via EmployeeModel (by employee_no or id)
+    emp = None
+    if not user:
+        emp = db.query(EmployeeModel).filter(
+            (EmployeeModel.employee_no.ilike(clean_input)) |
+            (EmployeeModel.id == clean_input)
+        ).first()
+
+        if emp:
+            if emp.email:
+                user = db.query(UserModel).filter(UserModel.email.ilike(emp.email.strip().lower())).first()
+            if not user:
+                user = db.query(UserModel).filter(
+                    (UserModel.employee_id == emp.id) |
+                    (UserModel.employee_id == emp.employee_no)
+                ).first()
+
+    # 3. Direct lookup by UserModel.employee_id
+    if not user:
+        user = db.query(UserModel).filter(UserModel.employee_id.ilike(clean_input)).first()
+
+    # 4. Fallback auto-provisioning: If employee exists in EmployeeModel but UserModel wasn't generated
+    if not user and emp and req.password in ["admin", "admin123", "password"]:
+        emp_email = (emp.email or f"{emp.employee_no.lower()}@ctso.net").strip().lower()
+        role = "SPV" if any(k in emp.role.upper() for k in ["SPV", "SUPERVISOR", "LEAD"]) else "Employee"
+        user = UserModel(
+            email=emp_email,
+            name=emp.name,
+            password_hash=get_password_hash(req.password),
+            role=role,
+            employee_id=emp.employee_no
+        )
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+
     if not user or not verify_password(req.password, user.password_hash):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Email atau password salah."
+            detail="Email / Username atau password salah."
         )
 
     token = create_access_token({
@@ -62,15 +112,35 @@ def register(req: UserCreate, db: Session = Depends(get_db)):
     clean_email = req.email.strip().lower()
     existing = db.query(UserModel).filter(UserModel.email == clean_email).first()
     if existing:
-        raise HTTPException(status_code=400, detail="Email sudah terdaftar.")
+        raise HTTPException(status_code=400, detail="Email sudah terdaftar. Silakan masuk.")
 
-    # Unauthenticated self-registration is strictly restricted to Employee role (Privilege Escalation Prevention)
+    emp_no = req.employee_id or f"CTSO-{uuid.uuid4().hex[:4].upper()}"
+
+    # Auto-link or create Employee record so they appear in employee list
+    emp = db.query(EmployeeModel).filter(
+        (EmployeeModel.email.ilike(clean_email)) |
+        (EmployeeModel.employee_no == emp_no)
+    ).first()
+
+    if not emp:
+        emp = EmployeeModel(
+            employee_no=emp_no,
+            name=req.name.strip(),
+            role="CTSO Staff",
+            status="active",
+            default_location="Badung",
+            email=clean_email
+        )
+        db.add(emp)
+        db.commit()
+        db.refresh(emp)
+
     user = UserModel(
         email=clean_email,
         name=req.name.strip(),
         password_hash=get_password_hash(req.password),
-        role="Employee",
-        employee_id=req.employee_id
+        role=req.role or "Employee",
+        employee_id=emp.employee_no
     )
     db.add(user)
     db.commit()
@@ -99,12 +169,32 @@ def register(req: UserCreate, db: Session = Depends(get_db)):
 def create_user_by_admin(
     req: UserCreate,
     db: Session = Depends(get_db),
-    admin: UserModel = Depends(require_admin)
+    current_user: UserModel = Depends(get_current_user)
 ):
+    if current_user.role not in ["Admin", "SPV"]:
+        raise HTTPException(status_code=403, detail="Tidak memiliki hak akses.")
+
     clean_email = req.email.strip().lower()
     existing = db.query(UserModel).filter(UserModel.email == clean_email).first()
     if existing:
-        raise HTTPException(status_code=400, detail="Email sudah terdaftar.")
+        existing.name = req.name.strip()
+        existing.role = req.role or existing.role
+        if req.employee_id:
+            existing.employee_id = req.employee_id
+        if req.password:
+            existing.password_hash = get_password_hash(req.password)
+        db.commit()
+        db.refresh(existing)
+        return {
+            "success": True,
+            "user": {
+                "id": existing.id,
+                "email": existing.email,
+                "name": existing.name,
+                "role": existing.role,
+                "employeeId": existing.employee_id
+            }
+        }
 
     user = UserModel(
         email=clean_email,

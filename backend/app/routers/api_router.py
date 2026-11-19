@@ -7,7 +7,7 @@ from ..models import (
     ScheduleHistoryModel, RosterRequestModel, LeaveModel,
     AnnouncementModel, ActivityLogModel, HolidayModel, PermissionModel, UserModel
 )
-from ..security import get_current_user, require_admin
+from ..security import get_current_user, require_admin, get_password_hash
 from ..schemas import (
     EmployeeCreate, EmployeeUpdate,
     ShiftCreate, ShiftUpdate,
@@ -469,6 +469,18 @@ def update_permission(role: str, data: dict, db: Session = Depends(get_db)):
 # ==========================================
 @router.get("/sync/pull")
 def pull_all_data(db: Session = Depends(get_db)):
+    users_list = [
+        {
+            "id": u.id,
+            "email": u.email,
+            "name": u.name,
+            "role": u.role,
+            "employeeId": u.employee_id,
+            "status": "active",
+            "createdAt": u.created_at.isoformat() if u.created_at else None
+        }
+        for u in db.query(UserModel).all()
+    ]
     employees = [
         {
             "id": e.id,
@@ -541,6 +553,7 @@ def pull_all_data(db: Session = Depends(get_db)):
 
     return {
         "success": True,
+        "users": users_list,
         "employees": employees,
         "shifts": shifts,
         "jobdesks": jobdesks,
@@ -551,19 +564,44 @@ def pull_all_data(db: Session = Depends(get_db)):
 
 @router.post("/sync/push")
 def push_all_data(payload: dict, db: Session = Depends(get_db), current_user: UserModel = Depends(get_current_user)):
-    # 1. Sync Employees
+    # 0. Sync Users
+    if "users" in payload and isinstance(payload["users"], list):
+        for u_data in payload["users"]:
+            u_email = (u_data.get("email") or "").strip().lower()
+            if not u_email:
+                continue
+            exist_u = db.query(UserModel).filter(UserModel.email == u_email).first()
+            if exist_u:
+                exist_u.name = u_data.get("name", exist_u.name)
+                exist_u.role = u_data.get("role", exist_u.role)
+                if u_data.get("employeeId"):
+                    exist_u.employee_id = u_data.get("employeeId")
+            else:
+                raw_pwd = u_data.get("password") or "admin"
+                new_u = UserModel(
+                    id=u_data.get("id"),
+                    email=u_email,
+                    name=u_data.get("name", "User"),
+                    password_hash=get_password_hash(raw_pwd),
+                    role=u_data.get("role", "Employee"),
+                    employee_id=u_data.get("employeeId") or u_data.get("userId")
+                )
+                db.add(new_u)
+
+    # 1. Sync Employees & Auto Provision Users
     if "employees" in payload and isinstance(payload["employees"], list):
         for emp_data in payload["employees"]:
             exist = db.query(EmployeeModel).filter(
                 (EmployeeModel.id == emp_data.get("id")) | 
                 (EmployeeModel.employee_no == emp_data.get("employeeNo"))
             ).first()
+            emp_email = (emp_data.get("email") or "").strip().lower()
             if exist:
                 exist.name = emp_data.get("name", exist.name)
                 exist.role = emp_data.get("role", exist.role)
                 exist.status = emp_data.get("status", exist.status)
                 exist.default_location = emp_data.get("defaultLocation", exist.default_location)
-                exist.email = emp_data.get("email", exist.email)
+                exist.email = emp_email or exist.email
                 exist.phone = emp_data.get("phone", exist.phone)
             else:
                 new_emp = EmployeeModel(
@@ -573,10 +611,22 @@ def push_all_data(payload: dict, db: Session = Depends(get_db), current_user: Us
                     role=emp_data.get("role", "CTSO Staff"),
                     status=emp_data.get("status", "active"),
                     default_location=emp_data.get("defaultLocation", "Badung"),
-                    email=emp_data.get("email"),
+                    email=emp_email,
                     phone=emp_data.get("phone")
                 )
                 db.add(new_emp)
+
+            # Auto-provision user account for this employee if email is provided
+            if emp_email:
+                user_match = db.query(UserModel).filter(UserModel.email == emp_email).first()
+                if not user_match:
+                    db.add(UserModel(
+                        email=emp_email,
+                        name=emp_data.get("name", "Employee"),
+                        password_hash=get_password_hash("admin"),
+                        role="SPV" if any(k in (emp_data.get("role") or "").upper() for k in ["SPV", "SUPERVISOR", "LEAD"]) else "Employee",
+                        employee_id=emp_data.get("employeeNo")
+                    ))
 
     # 2. Sync Shifts
     if "shifts" in payload and isinstance(payload["shifts"], list):
