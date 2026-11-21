@@ -18,7 +18,10 @@ import {
   Tag,
   Sparkles,
   Info,
-  X
+  X,
+  TrendingUp,
+  ArrowUpDown,
+  SlidersHorizontal
 } from 'lucide-react';
 import {
   getShiftBadgeStyle,
@@ -35,8 +38,586 @@ import {
 } from '../utils/dateUtils';
 import { WorkLocation } from '../types';
 
+interface EmployeeComboChartProps {
+  data: any[];
+  monthName: string;
+  onSelectEmployee: (empData: any) => void;
+}
+
+const EmployeeComboChart: React.FC<EmployeeComboChartProps> = ({
+  data,
+  monthName,
+  onSelectEmployee
+}) => {
+  const [sortBy, setSortBy] = useState<'working-desc' | 'holiday-desc' | 'name-asc'>('working-desc');
+  const [limit, setLimit] = useState<'all' | '10' | '15' | '20'>('all');
+  const [hoveredIdx, setHoveredIdx] = useState<number | null>(null);
+
+  const sortedData = useMemo(() => {
+    const list = [...data];
+    if (sortBy === 'working-desc') {
+      list.sort((a, b) => b.totalWorkingShifts - a.totalWorkingShifts || b.totalWorkOnHolidays - a.totalWorkOnHolidays);
+    } else if (sortBy === 'holiday-desc') {
+      list.sort((a, b) => b.totalWorkOnHolidays - a.totalWorkOnHolidays || b.totalWorkingShifts - a.totalWorkingShifts);
+    } else {
+      list.sort((a, b) => (a.employee?.name || '').localeCompare(b.employee?.name || ''));
+    }
+    if (limit !== 'all') {
+      return list.slice(0, parseInt(limit, 10));
+    }
+    return list;
+  }, [data, sortBy, limit]);
+
+  // Statistics
+  const stats = useMemo(() => {
+    if (data.length === 0) {
+      return {
+        avgWorking: 0,
+        maxWorking: 0,
+        maxWorkingEmp: '-',
+        maxHoliday: 0,
+        maxHolidayEmp: '-',
+        totalHolidayShifts: 0,
+        staffOnHolidays: 0
+      };
+    }
+    const totalWorking = data.reduce((acc, d) => acc + d.totalWorkingShifts, 0);
+    const avgWorking = totalWorking / data.length;
+
+    let maxWorking = 0;
+    let maxWorkingEmp = '-';
+    let maxHoliday = 0;
+    let maxHolidayEmp = '-';
+    let totalHolidayShifts = 0;
+    let staffOnHolidays = 0;
+
+    data.forEach((d) => {
+      if (d.totalWorkingShifts > maxWorking) {
+        maxWorking = d.totalWorkingShifts;
+        maxWorkingEmp = d.employee?.name || '-';
+      }
+      if (d.totalWorkOnHolidays > maxHoliday) {
+        maxHoliday = d.totalWorkOnHolidays;
+        maxHolidayEmp = d.employee?.name || '-';
+      }
+      if (d.totalWorkOnHolidays > 0) {
+        staffOnHolidays++;
+        totalHolidayShifts += d.totalWorkOnHolidays;
+      }
+    });
+
+    return {
+      avgWorking,
+      maxWorking,
+      maxWorkingEmp,
+      maxHoliday,
+      maxHolidayEmp,
+      totalHolidayShifts,
+      staffOnHolidays
+    };
+  }, [data]);
+
+  // Dimensions
+  const count = sortedData.length;
+  const slotWidth = Math.max(56, count > 0 ? Math.min(84, 820 / count) : 60);
+  const chartWidth = Math.max(760, count * slotWidth + 90);
+  const chartHeight = 310;
+  const padLeft = 48;
+  const padRight = 48;
+  const padTop = 32;
+  const padBottom = 78;
+  const innerWidth = chartWidth - padLeft - padRight;
+  const innerHeight = chartHeight - padTop - padBottom;
+
+  // Maximum scale
+  const maxVal = useMemo(() => {
+    const highest = Math.max(
+      ...sortedData.map((d) => Math.max(d.totalWorkingShifts, d.totalWorkOnHolidays)),
+      0
+    );
+    return Math.max(25, Math.ceil((highest + 2) / 5) * 5);
+  }, [sortedData]);
+
+  // Y-axis tick intervals
+  const yTicks = useMemo(() => {
+    const ticks: number[] = [];
+    const step = maxVal > 30 ? 10 : 5;
+    for (let i = 0; i <= maxVal; i += step) {
+      ticks.push(i);
+    }
+    return ticks;
+  }, [maxVal]);
+
+  const itemSlotWidth = count > 0 ? innerWidth / count : innerWidth;
+
+  // Points for line & bars
+  const chartItems = useMemo(() => {
+    return sortedData.map((d, i) => {
+      const cx = padLeft + (i + 0.5) * itemSlotWidth;
+      const barWidth = Math.min(26, Math.max(14, itemSlotWidth * 0.52));
+      const barHeight = Math.max(0, (d.totalWorkingShifts / maxVal) * innerHeight);
+      const barX = cx - barWidth / 2;
+      const barY = padTop + innerHeight - barHeight;
+      const lineY = padTop + innerHeight - Math.max(0, (d.totalWorkOnHolidays / maxVal) * innerHeight);
+      return {
+        data: d,
+        index: i,
+        cx,
+        barX,
+        barY,
+        barWidth,
+        barHeight,
+        lineY
+      };
+    });
+  }, [sortedData, padLeft, itemSlotWidth, maxVal, innerHeight, padTop]);
+
+  // SVG Line path
+  const linePathD = useMemo(() => {
+    if (chartItems.length === 0) return '';
+    return chartItems.reduce((acc, pt, i) => {
+      return i === 0 ? `M ${pt.cx} ${pt.lineY}` : `${acc} L ${pt.cx} ${pt.lineY}`;
+    }, '');
+  }, [chartItems]);
+
+  // SVG Line Area gradient path
+  const areaPathD = useMemo(() => {
+    if (chartItems.length === 0) return '';
+    const first = chartItems[0];
+    const last = chartItems[chartItems.length - 1];
+    const bottomY = padTop + innerHeight;
+    return `${linePathD} L ${last.cx} ${bottomY} L ${first.cx} ${bottomY} Z`;
+  }, [chartItems, linePathD, padTop, innerHeight]);
+
+  // Average line Y coordinate
+  const avgY = padTop + innerHeight - (stats.avgWorking / maxVal) * innerHeight;
+
+  const hoveredItem = hoveredIdx !== null ? chartItems[hoveredIdx] : null;
+
+  return (
+    <div className="bg-white dark:bg-[#18181A] p-6 rounded-2xl border border-slate-200/80 dark:border-white/10 shadow-xs space-y-5">
+      {/* Chart Top Header & Controls */}
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+        <div>
+          <div className="flex items-center gap-2">
+            <span className="w-2.5 h-2.5 rounded-full bg-indigo-600 animate-pulse" />
+            <h2 className="text-sm font-black text-[#0F172A] dark:text-white tracking-tight flex items-center gap-2">
+              <TrendingUp className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+              <span>Grafik Garis & Batang: Beban Kerja & Hari Libur Karyawan</span>
+            </h2>
+          </div>
+          <p className="text-xs text-slate-500 dark:text-gray-400 mt-1">
+            Kombinasi grafik batang (Total Hari Masuk Kerja) dan garis (Hari Kerja Jatuh di Hari Libur & Minggu) per personel periode {monthName}.
+          </p>
+        </div>
+
+        {/* Legend & Filter Controls */}
+        <div className="flex flex-wrap items-center gap-3">
+          {/* Legend Items */}
+          <div className="flex items-center gap-3 px-3 py-1.5 rounded-xl bg-slate-50 dark:bg-white/5 border border-slate-200/80 dark:border-white/10 text-[11px] font-semibold text-slate-700 dark:text-gray-300">
+            <div className="flex items-center gap-1.5">
+              <span className="w-3.5 h-3 rounded-xs bg-indigo-600" />
+              <span>Batang: Hari Kerja</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span className="w-2.5 h-2.5 rounded-full bg-rose-500 ring-2 ring-rose-200 dark:ring-rose-950" />
+              <span>Garis: Libur / Minggu</span>
+            </div>
+            <div className="hidden sm:flex items-center gap-1.5 text-slate-400 dark:text-gray-500">
+              <span className="w-3 h-0.5 border-b border-dashed border-slate-400" />
+              <span>Rerata Tim</span>
+            </div>
+          </div>
+
+          {/* Sort Selector */}
+          <div className="flex items-center gap-1 text-xs">
+            <ArrowUpDown className="w-3.5 h-3.5 text-slate-400" />
+            <select
+              aria-label="Urutkan data grafik"
+              value={sortBy}
+              onChange={(e) => setSortBy(e.target.value as any)}
+              className="text-xs font-semibold px-2.5 py-1.5 rounded-xl border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-white/5 text-slate-700 dark:text-gray-200 focus:outline-none focus:ring-1 focus:ring-slate-400 cursor-pointer"
+            >
+              <option value="working-desc">Hari Kerja Terbanyak</option>
+              <option value="holiday-desc">Kerja Libur Terbanyak</option>
+              <option value="name-asc">Nama Karyawan (A-Z)</option>
+            </select>
+          </div>
+
+          {/* Limit Selector */}
+          <div className="flex items-center gap-1 text-xs">
+            <SlidersHorizontal className="w-3.5 h-3.5 text-slate-400" />
+            <select
+              aria-label="Batasi jumlah personel di grafik"
+              value={limit}
+              onChange={(e) => setLimit(e.target.value as any)}
+              className="text-xs font-semibold px-2.5 py-1.5 rounded-xl border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-white/5 text-slate-700 dark:text-gray-200 focus:outline-none focus:ring-1 focus:ring-slate-400 cursor-pointer"
+            >
+              <option value="all">Semua ({data.length})</option>
+              <option value="15">Top 15</option>
+              <option value="10">Top 10</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      {/* Mini Insight Highlights Row */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <div className="p-3 rounded-xl bg-indigo-50/60 dark:bg-indigo-950/20 border border-indigo-100 dark:border-indigo-900/30">
+          <div className="text-[10px] font-bold uppercase tracking-wider text-indigo-700 dark:text-indigo-400">
+            Masuk Kerja Tertinggi
+          </div>
+          <div className="text-sm font-black text-slate-900 dark:text-white mt-0.5 truncate">
+            {stats.maxWorkingEmp}
+          </div>
+          <div className="text-[11px] font-mono font-bold text-indigo-600 dark:text-indigo-400 mt-0.5">
+            {stats.maxWorking} Hari Kerja
+          </div>
+        </div>
+
+        <div className="p-3 rounded-xl bg-rose-50/60 dark:bg-rose-950/20 border border-rose-100 dark:border-rose-900/30">
+          <div className="text-[10px] font-bold uppercase tracking-wider text-rose-700 dark:text-rose-400">
+            Kerja Libur Tertinggi
+          </div>
+          <div className="text-sm font-black text-slate-900 dark:text-white mt-0.5 truncate">
+            {stats.maxHolidayEmp}
+          </div>
+          <div className="text-[11px] font-mono font-bold text-rose-600 dark:text-rose-400 mt-0.5">
+            {stats.maxHoliday} Shift Libur / Minggu
+          </div>
+        </div>
+
+        <div className="p-3 rounded-xl bg-slate-50 dark:bg-white/5 border border-slate-200/80 dark:border-white/10">
+          <div className="text-[10px] font-bold uppercase tracking-wider text-slate-600 dark:text-gray-400">
+            Rata-rata Tim
+          </div>
+          <div className="text-sm font-black text-slate-900 dark:text-white mt-0.5">
+            {stats.avgWorking.toFixed(1)} <span className="text-[11px] font-normal text-slate-500">hari/orang</span>
+          </div>
+          <div className="text-[10px] text-slate-500 dark:text-gray-400 mt-0.5 truncate">
+            Baseline shift bulanan
+          </div>
+        </div>
+
+        <div className="p-3 rounded-xl bg-amber-50/60 dark:bg-amber-950/20 border border-amber-100 dark:border-amber-900/30">
+          <div className="text-[10px] font-bold uppercase tracking-wider text-amber-700 dark:text-amber-400">
+            Personel Masuk Libur
+          </div>
+          <div className="text-sm font-black text-slate-900 dark:text-white mt-0.5">
+            {stats.staffOnHolidays} <span className="text-[11px] font-normal text-slate-500">orang</span>
+          </div>
+          <div className="text-[10px] text-amber-600 dark:text-amber-400 mt-0.5 font-medium truncate">
+            Total {stats.totalHolidayShifts} shift di hari libur
+          </div>
+        </div>
+      </div>
+
+      {/* SVG Combo Chart Display */}
+      {sortedData.length === 0 ? (
+        <div className="py-12 text-center text-xs text-slate-500 italic border border-dashed border-slate-200 dark:border-white/10 rounded-xl">
+          Tidak ada data karyawan yang sesuai dengan kriteria filter saat ini.
+        </div>
+      ) : (
+        <div className="relative overflow-x-auto pb-2 select-none">
+          {/* Tooltip Float Overlay */}
+          {hoveredItem && (
+            <div
+              className="absolute z-20 pointer-events-none transition-all duration-150 transform -translate-x-1/2"
+              style={{
+                left: Math.max(140, Math.min(chartWidth - 140, hoveredItem.cx)),
+                top: Math.max(10, Math.min(hoveredItem.barY, hoveredItem.lineY) - 10)
+              }}
+            >
+              <div className="bg-[#0F172A] text-white dark:bg-white dark:text-[#0F172A] p-2.5 rounded-xl shadow-xl border border-slate-700 dark:border-slate-200 text-xs min-w-[210px] animate-fade-in">
+                <div className="font-extrabold text-[12px] truncate">
+                  {hoveredItem.data.employee.name}
+                </div>
+                <div className="text-[10px] text-slate-400 dark:text-slate-500 font-mono">
+                  {hoveredItem.data.employee.employeeNo} &bull; {hoveredItem.data.employee.defaultLocation || 'Hub'}
+                </div>
+                <div className="mt-2 pt-2 border-t border-slate-700/60 dark:border-slate-200/60 space-y-1">
+                  <div className="flex items-center justify-between">
+                    <span className="flex items-center gap-1.5 text-indigo-300 dark:text-indigo-600 font-semibold">
+                      <span className="w-2.5 h-2.5 rounded-xs bg-indigo-500" />
+                      Hari Kerja:
+                    </span>
+                    <span className="font-mono font-black">{hoveredItem.data.totalWorkingShifts} hari</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="flex items-center gap-1.5 text-rose-300 dark:text-rose-600 font-semibold">
+                      <span className="w-2 h-2 rounded-full bg-rose-500" />
+                      Kerja di Libur:
+                    </span>
+                    <span className="font-mono font-black text-rose-300 dark:text-rose-600">
+                      {hoveredItem.data.totalWorkOnHolidays} hari
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between text-[10px] text-slate-400 dark:text-slate-500">
+                    <span>Libur Nasional: {hoveredItem.data.holidayWorkCount} &bull; Minggu: {hoveredItem.data.sundayWorkCount}</span>
+                  </div>
+                  <div className="flex items-center justify-between text-[11px] pt-1">
+                    <span className="text-slate-400 dark:text-slate-500">Hari Off:</span>
+                    <span className="font-mono">{hoveredItem.data.totalOffShifts} hari</span>
+                  </div>
+                </div>
+                <div className="mt-2 pt-1 border-t border-slate-800 dark:border-slate-100 text-[9px] text-indigo-400 dark:text-indigo-600 text-center font-bold">
+                  Klik untuk melihat kalender detail
+                </div>
+              </div>
+            </div>
+          )}
+
+          <svg
+            width={chartWidth}
+            height={chartHeight}
+            className="overflow-visible font-sans"
+          >
+            <defs>
+              {/* Bar Gradients */}
+              <linearGradient id="barGradNormal" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor="#4F46E5" />
+                <stop offset="100%" stopColor="#3730A3" />
+              </linearGradient>
+              <linearGradient id="barGradHover" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor="#6366F1" />
+                <stop offset="100%" stopColor="#4338CA" />
+              </linearGradient>
+
+              {/* Line Area Gradient */}
+              <linearGradient id="lineAreaGrad" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor="#EF4444" stopOpacity="0.25" />
+                <stop offset="100%" stopColor="#EF4444" stopOpacity="0.0" />
+              </linearGradient>
+            </defs>
+
+            {/* Horizontal Gridlines & Y-Axis Labels */}
+            {yTicks.map((val) => {
+              const y = padTop + innerHeight - (val / maxVal) * innerHeight;
+              return (
+                <g key={val}>
+                  <line
+                    x1={padLeft}
+                    x2={padLeft + innerWidth}
+                    y1={y}
+                    y2={y}
+                    stroke="#E2E8F0"
+                    strokeDasharray="3 3"
+                    className="stroke-slate-200 dark:stroke-white/10"
+                  />
+                  <text
+                    x={padLeft - 8}
+                    y={y + 3.5}
+                    textAnchor="end"
+                    fontSize="10"
+                    className="fill-slate-600 dark:fill-gray-300 font-mono font-medium"
+                  >
+                    {val}
+                  </text>
+                </g>
+              );
+            })}
+
+            {/* Team Average Dashed Line */}
+            {stats.avgWorking > 0 && (
+              <g>
+                <line
+                  x1={padLeft}
+                  x2={padLeft + innerWidth}
+                  y1={avgY}
+                  y2={avgY}
+                  stroke="#94A3B8"
+                  strokeWidth="1.5"
+                  strokeDasharray="4 4"
+                  opacity="0.8"
+                />
+                <rect
+                  x={padLeft + innerWidth - 78}
+                  y={avgY - 9}
+                  width="74"
+                  height="16"
+                  rx="4"
+                  fill="#F1F5F9"
+                  className="fill-slate-100 dark:fill-white/10"
+                />
+                <text
+                  x={padLeft + innerWidth - 41}
+                  y={avgY + 3}
+                  textAnchor="middle"
+                  fontSize="9"
+                  fontWeight="bold"
+                  className="fill-slate-600 dark:fill-slate-300 font-mono"
+                >
+                  Rerata {stats.avgWorking.toFixed(1)}
+                </text>
+              </g>
+            )}
+
+            {/* Column Hover Background Rects */}
+            {chartItems.map((item) => {
+              const isHovered = hoveredIdx === item.index;
+              return (
+                <rect
+                  key={`hover-bg-${item.index}`}
+                  x={item.cx - itemSlotWidth / 2}
+                  y={padTop}
+                  width={itemSlotWidth}
+                  height={innerHeight}
+                  fill={isHovered ? 'currentColor' : 'transparent'}
+                  className={isHovered ? 'text-indigo-500/5 dark:text-indigo-400/10' : ''}
+                />
+              );
+            })}
+
+            {/* BARS: Total Working Shifts */}
+            {chartItems.map((item) => {
+              const isHovered = hoveredIdx === item.index;
+              return (
+                <g key={`bar-group-${item.index}`}>
+                  <rect
+                    x={item.barX}
+                    y={item.barY}
+                    width={item.barWidth}
+                    height={item.barHeight}
+                    rx="4"
+                    ry="4"
+                    fill={isHovered ? 'url(#barGradHover)' : 'url(#barGradNormal)'}
+                    className="transition-all duration-150"
+                  />
+                  {/* Value on top of bar */}
+                  <text
+                    x={item.cx}
+                    y={Math.max(padTop - 6, item.barY - 5)}
+                    textAnchor="middle"
+                    fontSize={isHovered ? '11' : '10'}
+                    fontWeight="bold"
+                    className={
+                      isHovered
+                        ? 'fill-indigo-600 dark:fill-indigo-400 font-black'
+                        : 'fill-slate-700 dark:fill-gray-300 font-mono'
+                    }
+                  >
+                    {item.data.totalWorkingShifts}
+                  </text>
+                </g>
+              );
+            })}
+
+            {/* LINE CHART: Area Fill under line */}
+            {areaPathD && (
+              <path
+                d={areaPathD}
+                fill="url(#lineAreaGrad)"
+                className="transition-all duration-200"
+              />
+            )}
+
+            {/* LINE CHART: Line Path */}
+            {linePathD && (
+              <path
+                d={linePathD}
+                fill="none"
+                stroke="#EF4444"
+                strokeWidth="2.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                className="transition-all duration-200"
+              />
+            )}
+
+            {/* LINE CHART: Markers / Points */}
+            {chartItems.map((item) => {
+              const isHovered = hoveredIdx === item.index;
+              const hasHolidayWork = item.data.totalWorkOnHolidays > 0;
+              return (
+                <g key={`point-${item.index}`}>
+                  <circle
+                    cx={item.cx}
+                    cy={item.lineY}
+                    r={isHovered ? 6 : hasHolidayWork ? 4.5 : 3.5}
+                    fill={hasHolidayWork ? '#EF4444' : '#94A3B8'}
+                    stroke="#FFFFFF"
+                    strokeWidth={isHovered ? 2.5 : 2}
+                    className="transition-all duration-150"
+                  />
+                  {/* If holiday work > 0 or hovered, print label */}
+                  {(hasHolidayWork || isHovered) && (
+                    <text
+                      x={item.cx}
+                      y={item.lineY - 7}
+                      textAnchor="middle"
+                      fontSize="9"
+                      fontWeight="black"
+                      fill="#EF4444"
+                      className="font-mono"
+                    >
+                      {item.data.totalWorkOnHolidays}
+                    </text>
+                  )}
+                </g>
+              );
+            })}
+
+            {/* X-AXIS: Employee Names */}
+            {chartItems.map((item) => {
+              const isHovered = hoveredIdx === item.index;
+              const rawName = item.data.employee.name || '';
+              const shortName = rawName.split(' ')[0] || rawName;
+              const textY = padTop + innerHeight + 14;
+
+              return (
+                <g
+                  key={`xlabel-${item.index}`}
+                  transform={`rotate(-40, ${item.cx}, ${textY})`}
+                  className="cursor-pointer"
+                  onClick={() => onSelectEmployee(item.data)}
+                >
+                  <text
+                    x={item.cx}
+                    y={textY}
+                    textAnchor="end"
+                    fontSize="10"
+                    fontWeight={isHovered ? '800' : '600'}
+                    className={
+                      isHovered
+                        ? 'fill-indigo-600 dark:fill-indigo-400 underline font-bold'
+                        : 'fill-slate-600 dark:fill-gray-300'
+                    }
+                  >
+                    {shortName}
+                  </text>
+                </g>
+              );
+            })}
+
+            {/* Invisible Interactive Hit-Test Overlay Columns */}
+            {chartItems.map((item) => {
+              return (
+                <rect
+                  key={`hittest-${item.index}`}
+                  x={item.cx - itemSlotWidth / 2}
+                  y={padTop}
+                  width={itemSlotWidth}
+                  height={innerHeight + padBottom}
+                  fill="transparent"
+                  className="cursor-pointer"
+                  onMouseEnter={() => setHoveredIdx(item.index)}
+                  onMouseLeave={() => setHoveredIdx(null)}
+                  onClick={() => onSelectEmployee(item.data)}
+                />
+              );
+            })}
+          </svg>
+        </div>
+      )}
+    </div>
+  );
+};
+
 export const Analytics: React.FC = () => {
-  const { employees, schedules, shifts, jobdesks } = useAuth();
+  const { employees, schedules, shifts, jobdesks, currentUser } = useAuth();
+
+  // Role Gate: Only Admin & SPV can access Analytics
+  const canAccess = currentUser?.role === 'Admin' || currentUser?.role === 'SPV';
 
   // Active Tab: 'employee' | 'shifting'
   const [activeTab, setActiveTab] = useState<'employee' | 'shifting'>('employee');
@@ -392,6 +973,20 @@ export const Analytics: React.FC = () => {
     }
   };
 
+  if (!canAccess) {
+    return (
+      <div className="bg-white dark:bg-[#18181A] p-8 sm:p-12 rounded-3xl border border-slate-200/80 dark:border-white/10 text-center max-w-lg mx-auto mt-12 shadow-sm">
+        <div className="w-14 h-14 rounded-2xl bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-800/40 flex items-center justify-center mx-auto mb-4">
+          <AlertTriangle className="w-7 h-7" />
+        </div>
+        <h2 className="text-xl font-black text-[#0F172A] dark:text-white">Akses Dibatasi</h2>
+        <p className="text-xs text-slate-500 dark:text-gray-400 mt-2 leading-relaxed">
+          Hanya pengguna dengan peran <strong>Admin</strong> atau <strong>Supervisor (SPV)</strong> yang diizinkan untuk mengakses halaman analitik.
+        </p>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
       {/* Top Header Card */}
@@ -599,7 +1194,16 @@ export const Analytics: React.FC = () => {
       {/* TAB 1: EMPLOYEE ANALYSIS VIEW                           */}
       {/* ======================================================== */}
       {activeTab === 'employee' && (
-        <div className="bg-white dark:bg-[#18181A] p-6 rounded-2xl border border-slate-200/80 dark:border-white/10 shadow-xs space-y-4">
+        <div className="space-y-6">
+          {/* 1. COMBINED BAR & LINE CHART */}
+          <EmployeeComboChart
+            data={employeeAnalysisData}
+            monthName={monthName}
+            onSelectEmployee={(empData) => setSelectedEmpModal(empData)}
+          />
+
+          {/* 2. TABLE MATRIX */}
+          <div className="bg-white dark:bg-[#18181A] p-6 rounded-2xl border border-slate-200/80 dark:border-white/10 shadow-xs space-y-4">
           <div>
             <h2 className="text-sm font-black text-[#0F172A] dark:text-white tracking-tight flex items-center gap-2">
               <Users className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
@@ -770,6 +1374,7 @@ export const Analytics: React.FC = () => {
             </table>
           </div>
         </div>
+      </div>
       )}
 
       {/* ======================================================== */}

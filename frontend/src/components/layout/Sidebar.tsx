@@ -152,6 +152,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   );
 
   const showReports = currentUser?.role === 'Admin' || currentUser?.role === 'SPV';
+  const showAnalytics = currentUser?.role === 'Admin' || currentUser?.role === 'SPV';
   const showManagement = visibleManagementItems.length > 0;
 
   return (
@@ -240,10 +241,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
               {!isCollapsed && <span>Requests & Leaves</span>}
             </NavLink>
 
-            <NavLink to="/analytics" aria-label="Analytics" className={() => navItemClass('/analytics')} title={isCollapsed ? 'Analytics' : undefined}>
-              <BarChart3 className="w-4 h-4 shrink-0" aria-hidden="true" />
-              {!isCollapsed && <span>Analytics</span>}
-            </NavLink>
+            {showAnalytics && (
+              <NavLink to="/analytics" aria-label="Analytics" className={() => navItemClass('/analytics')} title={isCollapsed ? 'Analytics' : undefined}>
+                <BarChart3 className="w-4 h-4 shrink-0" aria-hidden="true" />
+                {!isCollapsed && <span>Analytics</span>}
+              </NavLink>
+            )}
 
             {showReports && (
               <NavLink to="/reports" aria-label="Reports" className={() => navItemClass('/reports')} title={isCollapsed ? 'Reports' : undefined}>

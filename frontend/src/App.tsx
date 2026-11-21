@@ -131,7 +131,14 @@ export const App: React.FC = () => {
                   />
 
                   {/* Reports, Analytics & Profile */}
-                  <Route path="analytics" element={<Analytics />} />
+                  <Route
+                    path="analytics"
+                    element={
+                      <ProtectedRoute allowedRoles={['Admin', 'SPV']}>
+                        <Analytics />
+                      </ProtectedRoute>
+                    }
+                  />
                   <Route
                     path="reports"
                     element={
